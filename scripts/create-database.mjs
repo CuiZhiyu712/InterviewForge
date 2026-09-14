@@ -1,12 +1,138 @@
-import { closeSync, existsSync, openSync, renameSync, rmSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
 const defaultSourcePath = fileURLToPath(new URL("../data/source-index.json", import.meta.url));
 const defaultDatabasePath = fileURLToPath(new URL("../data/interview_bank.sqlite", import.meta.url));
+const staleLockThresholdMs = 5 * 60 * 1000;
+
+function comparablePath(path) {
+  return process.platform === "win32" ? path.toLowerCase() : path;
+}
+
+function pathsReferToSameFile(sourcePath, databasePath) {
+  const absoluteSourcePath = resolve(sourcePath);
+  const absoluteDatabasePath = resolve(databasePath);
+  if (comparablePath(absoluteSourcePath) === comparablePath(absoluteDatabasePath)) {
+    return true;
+  }
+  if (!existsSync(absoluteSourcePath) || !existsSync(absoluteDatabasePath)) {
+    return false;
+  }
+
+  if (comparablePath(realpathSync.native(absoluteSourcePath)) === comparablePath(realpathSync.native(absoluteDatabasePath))) {
+    return true;
+  }
+
+  const sourceStat = statSync(absoluteSourcePath);
+  const databaseStat = statSync(absoluteDatabasePath);
+  const hasUsableInodes = sourceStat.ino !== 0 && databaseStat.ino !== 0;
+  return hasUsableInodes && sourceStat.dev === databaseStat.dev && sourceStat.ino === databaseStat.ino;
+}
+
+function defaultIsProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== "ESRCH";
+  }
+}
+
+export function recoverStaleDatabaseState(databasePath, lockPath, operations = {}) {
+  const exists = operations.exists ?? existsSync;
+  const read = operations.read ?? readFileSync;
+  const list = operations.list ?? readdirSync;
+  const rename = operations.rename ?? renameSync;
+  const remove = operations.remove ?? rmSync;
+  const now = operations.now ?? Date.now;
+  const isProcessAlive = operations.isProcessAlive ?? defaultIsProcessAlive;
+  const thresholdMs = operations.thresholdMs ?? staleLockThresholdMs;
+
+  if (!exists(lockPath)) {
+    return false;
+  }
+
+  let lock;
+  try {
+    lock = JSON.parse(read(lockPath, "utf8"));
+  } catch {
+    return false;
+  }
+  const createdAt = Date.parse(lock.createdAt);
+  if (!Number.isInteger(lock.pid) || lock.pid <= 0 || !Number.isFinite(createdAt)) {
+    return false;
+  }
+  if (now() - createdAt < thresholdMs || isProcessAlive(lock.pid)) {
+    return false;
+  }
+
+  const directory = dirname(databasePath);
+  const backupPrefix = `${basename(databasePath)}.`;
+  const backupPaths = list(directory)
+    .filter((name) => name.startsWith(backupPrefix) && name.endsWith(".bak"))
+    .map((name) => join(directory, name));
+
+  if (exists(databasePath)) {
+    for (const backupPath of backupPaths) {
+      remove(backupPath);
+    }
+  } else if (backupPaths.length === 1) {
+    rename(backupPaths[0], databasePath);
+  } else if (backupPaths.length > 1) {
+    throw new Error(`cannot recover database: multiple backups found for ${databasePath}`);
+  }
+
+  remove(lockPath);
+  return true;
+}
+
+function acquireDatabaseLock(databasePath) {
+  const lockPath = `${databasePath}.lock`;
+  let lockHandle;
+  try {
+    lockHandle = openSync(lockPath, "wx");
+  } catch (error) {
+    if (error.code !== "EEXIST") {
+      throw error;
+    }
+    const recovered = recoverStaleDatabaseState(databasePath, lockPath);
+    if (!recovered) {
+      throw new Error(`database is locked; lock file exists: ${lockPath}`);
+    }
+    try {
+      lockHandle = openSync(lockPath, "wx");
+    } catch (retryError) {
+      if (retryError.code === "EEXIST") {
+        throw new Error(`database is locked; lock was acquired during recovery: ${lockPath}`);
+      }
+      throw retryError;
+    }
+  }
+
+  try {
+    writeFileSync(lockHandle, JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }), "utf8");
+  } catch (error) {
+    closeSync(lockHandle);
+    rmSync(lockPath, { force: true });
+    throw error;
+  }
+  return { lockHandle, lockPath };
+}
 
 export function normalizeQuestion(title) {
   const withoutDirectoryNumber = title
@@ -106,22 +232,11 @@ function parseArguments(arguments_) {
 async function createDatabase(sourcePath, databasePath) {
   const absoluteSourcePath = resolve(sourcePath);
   const absoluteDatabasePath = resolve(databasePath);
-  const comparableSourcePath = process.platform === "win32" ? absoluteSourcePath.toLowerCase() : absoluteSourcePath;
-  const comparableDatabasePath = process.platform === "win32" ? absoluteDatabasePath.toLowerCase() : absoluteDatabasePath;
-  if (comparableSourcePath === comparableDatabasePath) {
+  if (pathsReferToSameFile(absoluteSourcePath, absoluteDatabasePath)) {
     throw new Error("source and output must not refer to the same path");
   }
 
-  const lockPath = `${absoluteDatabasePath}.lock`;
-  let lockHandle;
-  try {
-    lockHandle = openSync(lockPath, "wx");
-  } catch (error) {
-    if (error.code === "EEXIST") {
-      throw new Error(`database is locked; lock file exists: ${lockPath}`);
-    }
-    throw error;
-  }
+  const { lockHandle, lockPath } = acquireDatabaseLock(absoluteDatabasePath);
 
   let temporaryPath;
   try {

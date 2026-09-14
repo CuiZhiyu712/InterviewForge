@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { normalizeQuestion, replaceDatabase } from "../scripts/create-database.mjs";
+import { normalizeQuestion, recoverStaleDatabaseState, replaceDatabase } from "../scripts/create-database.mjs";
 
 const scriptPath = fileURLToPath(new URL("../scripts/create-database.mjs", import.meta.url));
 const sourcePath = fileURLToPath(new URL("../data/source-index.json", import.meta.url));
@@ -50,6 +50,66 @@ try {
   assert.equal(readFileSync(targetPath, "utf8"), "new database", "successful replacement must install the new database");
   assert.ok(!existsSync(backupPath), "successful replacement must remove its backup");
 
+  const interruptedTargetPath = join(replacementDirectory, "interrupted.sqlite");
+  const interruptedLockPath = `${interruptedTargetPath}.lock`;
+  const interruptedBackupPath = `${interruptedTargetPath}.43210-deadbeef.bak`;
+  writeFileSync(interruptedBackupPath, "interrupted old database");
+  writeFileSync(interruptedLockPath, JSON.stringify({ pid: 43210, createdAt: "2026-09-14T00:00:00.000Z" }));
+  const recovered = recoverStaleDatabaseState(interruptedTargetPath, interruptedLockPath, {
+    now: () => Date.parse("2026-09-14T01:00:00.000Z"),
+    isProcessAlive: () => false,
+  });
+  assert.equal(recovered, true, "an old dead lock with one backup must be recovered");
+  assert.equal(readFileSync(interruptedTargetPath, "utf8"), "interrupted old database");
+  assert.ok(!existsSync(interruptedBackupPath));
+  assert.ok(!existsSync(interruptedLockPath));
+
+  const staleTargetPath = join(replacementDirectory, "stale.sqlite");
+  const staleLockPath = `${staleTargetPath}.lock`;
+  const staleBackupOne = `${staleTargetPath}.43212-first.bak`;
+  const staleBackupTwo = `${staleTargetPath}.43212-second.bak`;
+  writeFileSync(staleTargetPath, "current database");
+  writeFileSync(staleBackupOne, "stale backup one");
+  writeFileSync(staleBackupTwo, "stale backup two");
+  writeFileSync(staleLockPath, JSON.stringify({ pid: 43212, createdAt: "2026-09-14T00:00:00.000Z" }));
+  const staleCleaned = recoverStaleDatabaseState(staleTargetPath, staleLockPath, {
+    now: () => Date.parse("2026-09-14T01:00:00.000Z"),
+    isProcessAlive: () => false,
+  });
+  assert.equal(staleCleaned, true);
+  assert.equal(readFileSync(staleTargetPath, "utf8"), "current database", "recovery must preserve an existing target");
+  assert.ok(!existsSync(staleBackupOne));
+  assert.ok(!existsSync(staleBackupTwo));
+  assert.ok(!existsSync(staleLockPath));
+
+  const freshTargetPath = join(replacementDirectory, "fresh.sqlite");
+  const freshLockPath = `${freshTargetPath}.lock`;
+  const freshBackupPath = `${freshTargetPath}.43211-fresh.bak`;
+  writeFileSync(freshBackupPath, "fresh backup");
+  writeFileSync(freshLockPath, JSON.stringify({ pid: 43211, createdAt: "2026-09-14T00:59:00.000Z" }));
+  const freshRecovered = recoverStaleDatabaseState(freshTargetPath, freshLockPath, {
+    now: () => Date.parse("2026-09-14T01:00:00.000Z"),
+    isProcessAlive: () => false,
+  });
+  assert.equal(freshRecovered, false, "a fresh dead lock must not be recovered before the threshold");
+  assert.ok(!existsSync(freshTargetPath));
+  assert.ok(existsSync(freshBackupPath));
+  assert.ok(existsSync(freshLockPath));
+
+  const activeTargetPath = join(replacementDirectory, "active.sqlite");
+  const activeLockPath = `${activeTargetPath}.lock`;
+  const activeBackupPath = `${activeTargetPath}.43213-active.bak`;
+  writeFileSync(activeBackupPath, "active backup");
+  writeFileSync(activeLockPath, JSON.stringify({ pid: 43213, createdAt: "2026-09-14T00:00:00.000Z" }));
+  const activeRecovered = recoverStaleDatabaseState(activeTargetPath, activeLockPath, {
+    now: () => Date.parse("2026-09-14T01:00:00.000Z"),
+    isProcessAlive: () => true,
+  });
+  assert.equal(activeRecovered, false, "an old lock owned by a live process must not be recovered");
+  assert.ok(!existsSync(activeTargetPath));
+  assert.ok(existsSync(activeBackupPath));
+  assert.ok(existsSync(activeLockPath));
+
   const createResult = spawnSync(
     process.execPath,
     [scriptPath, "--source", sourcePath, "--output", databasePath],
@@ -71,9 +131,20 @@ try {
   assert.match(samePathResult.stderr, /source and output.*same/i);
   assert.deepEqual(readFileSync(sourceCopyPath), sourceCopyBefore, "same-path rejection must not alter the source JSON");
 
+  const hardLinkPath = join(temporaryDirectory, "source-hardlink.json");
+  linkSync(sourceCopyPath, hardLinkPath);
+  const hardLinkResult = spawnSync(
+    process.execPath,
+    [scriptPath, "--source", sourceCopyPath, "--output", hardLinkPath],
+    { encoding: "utf8" },
+  );
+  assert.notEqual(hardLinkResult.status, 0, "source and output hard links to the same file must be rejected");
+  assert.match(hardLinkResult.stderr, /source and output.*same/i);
+  assert.deepEqual(readFileSync(sourceCopyPath), sourceCopyBefore, "hard-link rejection must not alter the source JSON");
+
   const lockPath = `${databasePath}.lock`;
   const databaseBeforeLockConflict = readFileSync(databasePath);
-  writeFileSync(lockPath, "owned by another process", { flag: "wx" });
+  writeFileSync(lockPath, JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }), { flag: "wx" });
   const filesBeforeLockConflict = readdirSync(temporaryDirectory).sort();
   const lockedResult = spawnSync(
     process.execPath,
@@ -115,7 +186,7 @@ try {
       assert.equal(row.submodule, source.submodule ?? "", `submodule mismatch for ${source.id}`);
       assert.equal(row.source_site, source.site, `source_site mismatch for ${source.id}`);
       assert.equal(row.source_url, source.url, `source_url mismatch for ${source.id}`);
-      assert.ok(row.question.trim(), `normalized question must be non-empty for ${source.id}`);
+      assert.equal(row.question, normalizeQuestion(source.title), `normalized question mismatch for ${source.id}`);
     }
     assert.equal(
       database.prepare("SELECT question FROM questions WHERE source_id = 'src-0102'").get().question,
@@ -173,10 +244,11 @@ try {
     database.close();
   }
 
+  const generatedSchemaDatabase = new DatabaseSync(databasePath, { readOnly: true });
   const committedDatabase = new DatabaseSync(committedDatabasePath, { readOnly: true });
   try {
     const committedRows = committedDatabase.prepare(`
-      SELECT source_id, original_title, module, submodule, source_site, source_url
+      SELECT source_id, question, original_title, module, submodule, source_site, source_url
       FROM questions ORDER BY source_id
     `).all();
     const sortedSources = [...sources].sort((left, right) => left.id.localeCompare(right.id));
@@ -185,14 +257,23 @@ try {
       const source = sortedSources[index];
       const row = committedRows[index];
       assert.equal(row.source_id, source.id, `committed source_id mismatch for ${source.id}`);
+      assert.equal(row.question, normalizeQuestion(source.title), `committed question mismatch for ${source.id}`);
       assert.equal(row.original_title, source.title, `committed original_title mismatch for ${source.id}`);
       assert.equal(row.module, source.module, `committed module mismatch for ${source.id}`);
       assert.equal(row.submodule, source.submodule ?? "", `committed submodule mismatch for ${source.id}`);
       assert.equal(row.source_site, source.site, `committed source_site mismatch for ${source.id}`);
       assert.equal(row.source_url, source.url, `committed source_url mismatch for ${source.id}`);
     }
+
+    const tableNames = ["questions", "answers", "follow_ups", "tags", "answer_reviews"];
+    for (const tableName of tableNames) {
+      const generatedSql = generatedSchemaDatabase.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName).sql;
+      const committedSql = committedDatabase.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName).sql;
+      assert.equal(committedSql, generatedSql, `committed ${tableName} schema must match a fresh build`);
+    }
   } finally {
     committedDatabase.close();
+    generatedSchemaDatabase.close();
   }
 } finally {
   rmSync(temporaryDirectory, { recursive: true, force: true });

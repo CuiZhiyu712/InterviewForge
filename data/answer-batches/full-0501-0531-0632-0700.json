@@ -1,0 +1,2449 @@
+[
+  {
+    "sourceId": "src-0501",
+    "shortAnswer": "停止线程应采用协作式取消：设置中断或取消标志，让线程在安全点自行退出。",
+    "fullAnswer": "调用 interrupt 不会强杀线程，而是设置中断状态或使阻塞方法抛出 InterruptedException。任务循环应定期检查 isInterrupted，捕获中断后清理资源并恢复中断状态或退出。Future.cancel(true) 也依赖任务响应中断。不要使用 stop，因为它可能在任意位置释放锁并破坏对象不变量；无法中断的 I/O 需关闭资源或设置超时。",
+    "followUps": [
+      {
+        "question": "为什么捕获 InterruptedException 后常要重新中断？",
+        "answer": "若当前层不能完成取消处理，重新设置状态能把取消信号传给上层。"
+      },
+      {
+        "question": "布尔停止标志需要什么保证？",
+        "answer": "需用 volatile、原子变量或锁保证其他线程的写入可见。"
+      }
+    ],
+    "pitfalls": [
+      "中断是请求而不是强制，任务代码必须配合。"
+    ],
+    "tags": [
+      "Java线程",
+      "中断"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0502",
+    "shortAnswer": "使用多线程要控制共享状态、任务数量、锁顺序、异常传播和资源生命周期。",
+    "fullAnswer": "先判断任务是否值得并发，再优先不可变数据、线程封闭或消息传递。共享复合状态用锁或原子操作保护，统一锁顺序防死锁；线程池和队列必须有界，设置超时、取消与拒绝策略。还要处理 ThreadLocal 清理、任务异常、上下文传递和优雅停机，并用压力测试与监控验证吞吐、尾延迟和正确性。",
+    "followUps": [
+      {
+        "question": "为什么线程安全容器仍可能出错？",
+        "answer": "单次方法安全不代表“先查再改”等跨调用业务操作原子。"
+      },
+      {
+        "question": "怎样发现并发问题？",
+        "answer": "结合静态审查、竞态测试、线程转储和运行期锁等待指标。"
+      }
+    ],
+    "pitfalls": [
+      "不要仅靠增加 synchronized 修复所有并发问题。"
+    ],
+    "tags": [
+      "多线程",
+      "并发安全"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0503",
+    "shortAnswer": "Java 创建执行任务可继承 Thread、实现 Runnable、实现 Callable，工程上通常交给线程池执行。",
+    "fullAnswer": "继承 Thread 把任务和线程绑定，不利于复用；Runnable 无返回值且 checked 异常需自行处理；Callable 可返回结果并抛异常，常通过 FutureTask 或 ExecutorService 提交。CompletableFuture 更适合组合异步阶段。所谓“创建方式”与“线程调度方式”应区分，生产代码避免每个请求 new Thread，应使用有界执行器和统一监控。",
+    "followUps": [
+      {
+        "question": "Runnable 和 Callable 最主要区别是什么？",
+        "answer": "Callable 有返回值并可抛受检异常，Runnable 的 run 返回 void。"
+      },
+      {
+        "question": "CompletableFuture 一定创建新线程吗？",
+        "answer": "不一定，取决于使用的异步方法和指定 Executor，非异步阶段可能在当前线程执行。"
+      }
+    ],
+    "pitfalls": [
+      "不要把线程池说成第四种底层创建线程的机制。"
+    ],
+    "tags": [
+      "Java线程",
+      "Runnable",
+      "Callable"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0504",
+    "shortAnswer": "Java 线程间通信可通过共享变量与同步器、阻塞队列、Future 或消息传递完成。",
+    "fullAnswer": "低层机制有 volatile、wait/notify、Condition 和 park/unpark；高层更推荐 BlockingQueue、CountDownLatch、Semaphore、Phaser、Exchanger、CompletableFuture 和并发容器。选择取决于传数据、等待事件还是限制并发。通信必须同时保证可见性和顺序，等待要支持超时和中断；避免忙轮询及无条件 notify 导致丢信号。 若使用共享队列，还应规定关闭信号、消费幂等与积压上限，确保生产者退出时消费者不会永久等待。",
+    "followUps": [
+      {
+        "question": "volatile 适合传递什么？",
+        "answer": "适合独立状态标志或发布不可变引用，不适合需要复合原子的计数更新。"
+      },
+      {
+        "question": "阻塞队列的优势是什么？",
+        "answer": "把数据传递、等待和容量反压封装在一起，减少显式锁条件错误。"
+      }
+    ],
+    "pitfalls": [
+      "通信协议应定义关闭信号，否则消费者可能永久等待。"
+    ],
+    "tags": [
+      "线程通信",
+      "同步器"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0505",
+    "shortAnswer": "启动 Java 线程要调用 start，而不是直接调用 run。",
+    "fullAnswer": "new Thread(task).start() 会请求 JVM 创建或调度新线程，随后在新线程调用 run；直接调用 run 只是当前线程的普通方法调用。一个 Thread 实例只能成功 start 一次，重复启动会抛 IllegalThreadStateException。工程上通常向 ExecutorService 提交任务，由池管理线程数量、异常和关闭，避免无限创建原生线程。",
+    "followUps": [
+      {
+        "question": "start 返回是否代表线程已运行完成？",
+        "answer": "不代表，只说明启动请求已发出；完成需 join、Future 或其他同步方式等待。"
+      },
+      {
+        "question": "怎样给线程命名？",
+        "answer": "构造 Thread 时指定名称或使用自定义 ThreadFactory，便于日志和诊断。"
+      }
+    ],
+    "pitfalls": [
+      "不能靠 sleep 等待另一个线程完成。"
+    ],
+    "tags": [
+      "Java线程",
+      "start"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0506",
+    "shortAnswer": "BLOCKED 专指等待进入 synchronized 监视器，WAITING 是无期限等待某个事件。",
+    "fullAnswer": "线程尝试进入被其他线程持有的 monitor 时为 BLOCKED；调用 Object.wait、Thread.join 或 LockSupport.park 等可能进入 WAITING，其中 wait 会先释放对应 monitor。WAITING 恢复后通常先进入可运行或重新竞争锁；ReentrantLock 等 AQS 等待常表现为 WAITING 而非 BLOCKED。排障需看具体栈和锁拥有者，不能只看名称。 同时要结合线程转储中的 waiting on 与 locked 标记确认资源关系，必要时多次采样排除瞬时状态。",
+    "followUps": [
+      {
+        "question": "TIMED_WAITING 与 WAITING 有何区别？",
+        "answer": "前者带超时，如 sleep、带时限 wait/join 或 parkNanos，时间到可自行恢复。"
+      },
+      {
+        "question": "notify 后线程立刻 RUNNABLE 吗？",
+        "answer": "它需重新获得 monitor，期间可能先表现为 BLOCKED。"
+      }
+    ],
+    "pitfalls": [
+      "Java 状态并不完全等同操作系统调度状态。"
+    ],
+    "tags": [
+      "线程状态",
+      "BLOCKED"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0507",
+    "shortAnswer": "Go 协程由运行时在少量操作系统线程上调度，传统 Java Thread 通常一线程对应一个平台线程。",
+    "fullAnswer": "goroutine 初始栈小且可增长，Go 的 G-M-P 调度器负责复用；Java 平台线程由操作系统调度，栈和切换成本较高。现代 Java 21 虚拟线程也由 JVM 调度到载体线程，使用体验更接近轻量任务，但模型与 goroutine 不同。两者都不能消除共享竞态，阻塞本地调用和 ThreadLocal 使用仍需关注。",
+    "followUps": [
+      {
+        "question": "Java 虚拟线程等同 goroutine 吗？",
+        "answer": "不等同，调度器、栈实现、取消和语言并发抽象不同，只是都较轻量。"
+      },
+      {
+        "question": "Go channel 是否自动避免所有竞态？",
+        "answer": "不会，共享变量或错误协议仍可能竞态，需 race detector 和设计约束。"
+      }
+    ],
+    "pitfalls": [
+      "比较时必须说明 Java 平台线程还是虚拟线程以及 JDK 版本。"
+    ],
+    "tags": [
+      "Go",
+      "Java线程"
+    ],
+    "difficulty": "中等",
+    "contextNote": "以 Java 21 虚拟线程与传统平台线程区分说明。"
+  },
+  {
+    "sourceId": "src-0508",
+    "shortAnswer": "Java 多线程是让多个执行流并发推进，以提高多核利用和 I/O 场景吞吐。",
+    "fullAnswer": "线程共享进程堆和资源，各自拥有栈与执行上下文。使用时要注意竞态、可见性、原子性、死锁、上下文切换和异常丢失；优先减少共享可变状态，用锁、原子类或并发容器保护不变量。线程池与队列需有界，任务需超时取消，性能要同时观察吞吐和 P99，不能只看平均值。",
+    "followUps": [
+      {
+        "question": "多线程何时反而更慢？",
+        "answer": "任务过小、锁竞争激烈、线程过多或缓存抖动时，调度成本超过并行收益。"
+      },
+      {
+        "question": "怎样安全发布对象？",
+        "answer": "通过 final 字段、volatile 写、锁释放或并发容器建立 happens-before。"
+      }
+    ],
+    "pitfalls": [
+      "线程数量不是越多越好。"
+    ],
+    "tags": [
+      "多线程",
+      "Java并发"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0509",
+    "shortAnswer": "Java 平台线程通常映射到操作系统线程，但 Java 的状态和管理抽象并不完全相同。",
+    "fullAnswer": "HotSpot 常采用一对一模型，start 最终创建本地线程，由操作系统调度；JVM 提供 Thread 对象、Java 状态、中断和监视器。Java 21 虚拟线程则由 JVM 将大量虚拟线程挂载到少量载体线程，打破一对一。即使平台线程，RUNNABLE 也可能在本地系统调用中阻塞，因此诊断需联合 jstack 与系统线程视图。",
+    "followUps": [
+      {
+        "question": "Java 线程 ID 与 OS TID 相同吗？",
+        "answer": "不应假设相同，诊断常需用线程转储 nid 与系统 TID 对照。"
+      },
+      {
+        "question": "虚拟线程被 synchronized 阻塞会怎样？",
+        "answer": "较新 JDK 持续改进固定问题，具体行为需按版本和阻塞类型测试。"
+      }
+    ],
+    "pitfalls": [
+      "回答必须区分平台线程与虚拟线程。"
+    ],
+    "tags": [
+      "Java线程",
+      "操作系统"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "虚拟线程行为以目标 JDK 版本为准。"
+  },
+  {
+    "sourceId": "src-0510",
+    "shortAnswer": "Java 线程状态共有 NEW、RUNNABLE、BLOCKED、WAITING、TIMED_WAITING 和 TERMINATED。",
+    "fullAnswer": "NEW 尚未启动；RUNNABLE 包含正在运行和可运行，甚至某些本地 I/O；BLOCKED 等待 synchronized monitor；WAITING 是无限等待，TIMED_WAITING 有期限；TERMINATED 已结束。状态只是瞬时观察，线程池工作线程正常空闲也可能 WAITING。排障应连续采样栈、锁、CPU 和请求指标，不能仅凭状态下结论。 还应注意 Java 状态与操作系统线程状态并非一一对应，分析时需要把调度、锁竞争和外部依赖联系起来。",
+    "followUps": [
+      {
+        "question": "sleep 对应哪个状态？",
+        "answer": "通常进入 TIMED_WAITING，时间到或被中断后恢复。"
+      },
+      {
+        "question": "等待 ReentrantLock 是 BLOCKED 吗？",
+        "answer": "AQS 常通过 park 等待，通常显示 WAITING，而非 monitor 的 BLOCKED。"
+      }
+    ],
+    "pitfalls": [
+      "Java 状态与 OS 状态不能逐项对应。"
+    ],
+    "tags": [
+      "Thread.State",
+      "线程状态"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0511",
+    "shortAnswer": "notify 随机唤醒一个在该监视器上等待的线程，notifyAll 唤醒全部等待者去重新竞争锁。",
+    "fullAnswer": "两者都必须在持有对象 monitor 时调用，且唤醒不代表立即运行；调用方释放锁后等待者才竞争。多个条件共用一个 wait set 时，notify 可能唤醒不满足条件的线程导致停滞，notifyAll 更安全但有惊群成本。更清晰的方案是 Lock 配多个 Condition，让不同条件拥有独立等待队列。",
+    "followUps": [
+      {
+        "question": "为什么等待条件要用 while？",
+        "answer": "被唤醒后条件可能仍不成立或发生虚假唤醒，必须重新检查。"
+      },
+      {
+        "question": "notifyAll 会让所有线程同时进入临界区吗？",
+        "answer": "不会，它们都变为可竞争状态，但同一时刻只有一个获得 monitor。"
+      }
+    ],
+    "pitfalls": [
+      "不能用 notify 依赖某种固定唤醒顺序。"
+    ],
+    "tags": [
+      "wait/notify",
+      "线程通信"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0512",
+    "shortAnswer": "notify 由 JVM 从同一对象 wait set 中选择一个线程，Java 规范不保证顺序。",
+    "fullAnswer": "选择可能受 JVM 实现和调度影响，不能假设 FIFO、优先级或等待最久者先醒。被选线程还要等通知者退出同步块并重新获取 monitor。若存在多个不同条件，notify 可能唤醒无法继续的线程，所以通常用 notifyAll 加 while 条件检查，或改用多个 Condition 实现定向 signal。",
+    "followUps": [
+      {
+        "question": "能通过线程优先级控制 notify 选择吗？",
+        "answer": "不能，优先级只是调度提示，不是 wait set 选择契约。"
+      },
+      {
+        "question": "如何避免惊群？",
+        "answer": "用显式 Lock 的不同 Condition 分组等待者，针对条件调用 signal。"
+      }
+    ],
+    "pitfalls": [
+      "依赖观察到的唤醒顺序会产生不可移植并发 bug。"
+    ],
+    "tags": [
+      "notify",
+      "Java线程"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0513",
+    "shortAnswer": "sleep 暂停当前线程但不释放锁，wait 释放对应 monitor 并等待条件通知。",
+    "fullAnswer": "sleep 是 Thread 静态方法，可在任意位置调用，时间到或中断后继续竞争 CPU；wait 是 Object 方法，必须在持有该对象 monitor 时调用，醒来后需重新获得锁。wait 应与 while 条件循环配合。需要更明确的并发语义时，优先 BlockingQueue、Condition 或 Latch，减少低层通知错误。 通知方修改条件和调用通知应在同一同步协议内完成，并允许虚假唤醒，否则容易出现永久等待或竞态。",
+    "followUps": [
+      {
+        "question": "sleep(0) 有什么保证？",
+        "answer": "基本不提供业务同步保证，可能只是调度提示，不能依赖其让出执行权。"
+      },
+      {
+        "question": "wait 超时后条件一定满足吗？",
+        "answer": "不一定，超时、通知或虚假唤醒都需重新检查条件。"
+      }
+    ],
+    "pitfalls": [
+      "不要用 sleep 做线程间正确性同步。"
+    ],
+    "tags": [
+      "sleep",
+      "wait"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0514",
+    "shortAnswer": "sleep 期间线程不执行指令，通常让出处理器调度机会，但不会释放所持 Java 锁。",
+    "fullAnswer": "调用 Thread.sleep 后进入 TIMED_WAITING，操作系统可调度其他线程，所以不会持续消耗该线程的 CPU 时间；但到点只变为可运行，不保证立即执行。sleep 精度受调度器影响，并可能被 interrupt 提前结束。它不释放 synchronized 或 Lock，持锁 sleep 会阻塞其他线程，应避免用它等待业务条件。",
+    "followUps": [
+      {
+        "question": "sleep 是否保证至少睡满指定时间？",
+        "answer": "通常不会提前自然返回，但中断可提前结束，实际恢复时间也可能更晚。"
+      },
+      {
+        "question": "sleep 与 LockSupport.parkNanos 区别？",
+        "answer": "两者都可定时等待，但 park 有许可语义且不抛 InterruptedException。"
+      }
+    ],
+    "pitfalls": [
+      "让出 CPU 不等于释放临界资源。"
+    ],
+    "tags": [
+      "sleep",
+      "CPU调度"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0515",
+    "shortAnswer": "WAITING 线程在等待条件满足、收到通知、目标线程结束、获得许可或被中断后可恢复。",
+    "fullAnswer": "Object.wait 需由其他线程在同一 monitor 上 notify/notifyAll，随后重新竞争锁；Thread.join 等目标线程结束；LockSupport.park 由 unpark、虚假返回或中断解除；Condition.await 由 signal。恢复不保证业务条件成立，所以必须循环检查。若通知发生前后协议设计错误，可能永久等待，应设置超时和关闭信号。",
+    "followUps": [
+      {
+        "question": "unpark 先于 park 会丢失吗？",
+        "answer": "不会，线程持有一个许可，后续一次 park 可直接消费返回。"
+      },
+      {
+        "question": "中断 WAITING 后一定抛异常吗？",
+        "answer": "wait、join、Condition.await 会抛，park 通常直接返回并保留中断状态。"
+      }
+    ],
+    "pitfalls": [
+      "恢复到 RUNNABLE 不等于立即获得 CPU 或锁。"
+    ],
+    "tags": [
+      "WAITING",
+      "线程恢复"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0516",
+    "shortAnswer": "Java 并发面试应围绕 JMM、线程、锁、原子类、并发容器、线程池与故障排查形成体系。",
+    "fullAnswer": "基础先掌握 happens-before、volatile、synchronized、Lock、CAS 和线程状态，再理解 ConcurrentHashMap、AQS、阻塞队列、CompletableFuture、线程池参数及虚拟线程。回答要能说明原子范围、失败与性能边界，并用死锁、任务积压和内存泄漏案例串联。实现细节随 JDK 变化，应明确版本并以并发测试验证。",
+    "followUps": [
+      {
+        "question": "最能区分理解深度的问题是什么？",
+        "answer": "让候选人解释一个复合操作为何不原子，并给出多种正确实现及取舍。"
+      },
+      {
+        "question": "并发性能怎么评测？",
+        "answer": "固定负载测吞吐、P99、CPU、队列和正确性，避免只做无竞争微基准。"
+      }
+    ],
+    "pitfalls": [
+      "不要背 API 列表而无法推导 happens-before。"
+    ],
+    "tags": [
+      "Java并发",
+      "面试体系"
+    ],
+    "difficulty": "中等",
+    "contextNote": "文章型标题按并发知识体系讲解题回答。"
+  },
+  {
+    "sourceId": "src-0517",
+    "shortAnswer": "可用 CountDownLatch(3) 让三个工作线程完成后 countDown，等待线程调用 await。",
+    "fullAnswer": "主线程创建计数为三的 CountDownLatch，并把同一 latch 交给三个任务；每个任务在 finally 中 countDown，避免异常导致永远等待；汇总线程 await 后继续。若需重复多轮可用 CyclicBarrier 或 Phaser。还要给 await 设置业务超时并传播失败，不能只等计数而忽略某个任务实际失败。",
+    "followUps": [
+      {
+        "question": "为什么 countDown 放 finally？",
+        "answer": "任务异常也必须释放计数，否则等待线程会永久阻塞。"
+      },
+      {
+        "question": "CompletableFuture 如何实现？",
+        "answer": "三个 future 用 allOf 合并，再在后续阶段读取结果并处理任一异常。"
+      }
+    ],
+    "pitfalls": [
+      "全部结束不代表全部成功，结果状态必须单独检查。"
+    ],
+    "tags": [
+      "CountDownLatch",
+      "线程协调"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0518",
+    "shortAnswer": "双重检查单例中 synchronized 保证初始化互斥，volatile 防止引用发布重排序和不可见。",
+    "fullAnswer": "new 对象可概念化为分配内存、初始化、赋引用；若引用赋值先被其他线程看到，它可能拿到未完整构造对象。volatile 禁止相关重排序并建立写读可见性，synchronized 只保护进入内部初始化的线程，而外层第一次检查不持锁，因此两者都需要。更简洁可靠的方式是静态内部类或 enum 单例。",
+    "followUps": [
+      {
+        "question": "只去掉外层检查可以吗？",
+        "answer": "可以保持正确，但每次获取都进入 synchronized，增加不必要竞争。"
+      },
+      {
+        "question": "volatile 能替代 synchronized 吗？",
+        "answer": "不能，volatile 不保证创建过程只执行一次的复合原子性。"
+      }
+    ],
+    "pitfalls": [
+      "解释依赖 JMM 发布语义，不能仅说为了“保险”。"
+    ],
+    "tags": [
+      "单例",
+      "volatile"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0519",
+    "shortAnswer": "核心线程数可以设为零，但执行行为取决于队列类型、最大线程数和执行器实现。",
+    "fullAnswer": "ThreadPoolExecutor 允许 corePoolSize 为零，只要 maximumPoolSize 大于零。提交任务到有界或无界队列时，execute 会确保至少创建一个线程处理已排队任务；空闲后线程可按 keepAliveTime 回收。若使用 SynchronousQueue 则直接创建非核心线程。适合低频任务但可能增加冷启动，仍需验证任务不会长期滞留。",
+    "followUps": [
+      {
+        "question": "核心数为零配无界队列会永不创建线程吗？",
+        "answer": "标准 ThreadPoolExecutor 的 execute 会在入队后确保至少有一个工作线程。"
+      },
+      {
+        "question": "如何预启动核心线程？",
+        "answer": "调用 prestartCoreThread 或 prestartAllCoreThreads，核心数为零时无可预启动。"
+      }
+    ],
+    "pitfalls": [
+      "不要凭旧文章推断行为，应结合 JDK 源码和测试。"
+    ],
+    "tags": [
+      "线程池",
+      "corePoolSize"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0520",
+    "shortAnswer": "若普通 int 在两个线程中各自执行五十次 i++，结果理论上介于五十到一百之间，常见值不确定。",
+    "fullAnswer": "i++ 是读、加、写的复合操作，两个线程可能读取同一旧值并覆盖，发生丢失更新；没有同步还存在可见性和 JIT 优化影响，所以不能依赖某个确切结果。正确方案可用 synchronized、AtomicInteger.incrementAndGet 或 LongAdder。需要精确最终值时 join 两个线程后再读取，并用压力测试展示竞态。",
+    "followUps": [
+      {
+        "question": "为什么最小值通常说五十？",
+        "answer": "在每个线程内部操作顺序保持且写入值递增的简化分析下，一个线程的更新最多完全覆盖另一线程。"
+      },
+      {
+        "question": "volatile int 能修复吗？",
+        "answer": "不能，volatile 保证读写可见但不把 i++ 合为原子操作。"
+      }
+    ],
+    "pitfalls": [
+      "具体极端结果讨论需说明 JMM 与实现假设。"
+    ],
+    "tags": [
+      "竞态条件",
+      "AtomicInteger"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按普通共享 int 且无同步语境回答。"
+  },
+  {
+    "sourceId": "src-0521",
+    "shortAnswer": "线程池通过复用工作线程、队列缓冲和拒绝策略限制并发资源。",
+    "fullAnswer": "提交任务后，线程数小于核心数先创建线程；否则尝试入队，队列满再扩到最大线程；仍满则拒绝。工作线程循环从队列取任务，空闲非核心线程可超时退出。生产中需用有界队列、自定义命名、任务异常捕获、超时取消和优雅关闭，并监控活跃数、队列长度、完成与拒绝数。",
+    "followUps": [
+      {
+        "question": "无界队列对 maximumPoolSize 有何影响？",
+        "answer": "达到核心线程后任务都入队，通常不会扩到最大线程，可能造成无限积压。"
+      },
+      {
+        "question": "任务执行抛异常如何观测？",
+        "answer": "execute 可用未捕获处理器，submit 要检查 Future 或覆写 afterExecute。"
+      }
+    ],
+    "pitfalls": [
+      "线程池只能控制本进程并发，不能自动保护下游。"
+    ],
+    "tags": [
+      "线程池",
+      "工作原理"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0522",
+    "shortAnswer": "线程池任务可通过 Future.cancel 尝试取消，但能否停止取决于任务状态和中断响应。",
+    "fullAnswer": "submit 返回 Future，cancel(false) 只取消尚未开始的任务，cancel(true) 对运行任务发送中断。任务若忽略中断、阻塞于不可中断调用或已产生外部副作用，取消不能回滚。对仍在队列的 Runnable 也可 remove 或 purge，但需持有同一对象。任务应设计检查点、超时、幂等和补偿，并记录取消结果。",
+    "followUps": [
+      {
+        "question": "cancel 返回 true 是否代表业务已停止？",
+        "answer": "只代表取消请求被接受，运行代码可能尚在退出或已完成副作用。"
+      },
+      {
+        "question": "shutdownNow 如何处理队列任务？",
+        "answer": "尝试中断工作线程，并返回尚未开始执行的排队任务列表。"
+      }
+    ],
+    "pitfalls": [
+      "不要用 Thread.stop 实现撤回。"
+    ],
+    "tags": [
+      "Future",
+      "任务取消"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0523",
+    "shortAnswer": "ThreadPoolExecutor 参数包括 corePoolSize、maximumPoolSize、keepAliveTime、unit、workQueue、threadFactory 和 handler。",
+    "fullAnswer": "核心与最大线程数限定执行并发，存活时间控制空闲非核心回收，队列承担缓冲，线程工厂负责命名和属性，拒绝处理器决定过载行为。队列选择改变扩容：无界队列让最大数几乎失效，SynchronousQueue 倾向直接扩线程。参数应按任务阻塞比、内存、下游限额和延迟目标压测。",
+    "followUps": [
+      {
+        "question": "allowCoreThreadTimeOut 有什么作用？",
+        "answer": "允许核心线程也在空闲超过 keepAliveTime 后退出，适合低频弹性任务。"
+      },
+      {
+        "question": "线程工厂为何重要？",
+        "answer": "统一命名、优先级、守护属性和异常处理，便于诊断。"
+      }
+    ],
+    "pitfalls": [
+      "参数之间联动，不能逐个孤立调优。"
+    ],
+    "tags": [
+      "线程池",
+      "参数"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0524",
+    "shortAnswer": "JDK 内置拒绝策略有 Abort、CallerRuns、Discard 和 DiscardOldest 四类。",
+    "fullAnswer": "AbortPolicy 抛 RejectedExecutionException；CallerRunsPolicy 让提交线程执行，形成反压但可能拖慢上游；DiscardPolicy 静默丢弃；DiscardOldestPolicy 丢队头后重试，可能破坏顺序与优先级。业务常实现自定义策略记录指标、持久化或降级。拒绝是容量保护信号，队列必须有界并告警，不能静默忽略关键任务。",
+    "followUps": [
+      {
+        "question": "CallerRuns 何时危险？",
+        "answer": "提交线程持锁、来自事件循环或响应线程时，执行慢任务可能导致死锁或级联延迟。"
+      },
+      {
+        "question": "关键消息能用 DiscardPolicy 吗？",
+        "answer": "通常不能，除非业务明确允许丢失且有度量；应持久化、重试或快速失败。"
+      }
+    ],
+    "pitfalls": [
+      "拒绝策略不能替代容量规划。"
+    ],
+    "tags": [
+      "线程池",
+      "拒绝策略"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0525",
+    "shortAnswer": "线程池相比手工固定创建三个线程，优势是任务与线程解耦、可复用、可排队并统一治理。",
+    "fullAnswer": "当任务持续到来时，池可复用线程，限制最大并发，提供队列、拒绝、统计、取消和优雅关闭；手工三个线程更适合一次性且生命周期明确的固定并行任务。线程池也有排队延迟和配置风险，不能自动让三个任务更快。选择应看任务是否重复、是否需要弹性和统一监控，而不是仅看线程数量。",
+    "followUps": [
+      {
+        "question": "一次性三个任务应该用什么？",
+        "answer": "可用固定线程池配 invokeAll/CompletableFuture，或结构化并发；短程序也可直接线程并 join。"
+      },
+      {
+        "question": "线程池如何隔离不同任务？",
+        "answer": "按资源与 SLA 使用独立有界池，避免慢任务占满公共池。"
+      }
+    ],
+    "pitfalls": [
+      "公共线程池滥用会造成任务间相互拖累。"
+    ],
+    "tags": [
+      "线程池",
+      "资源治理"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0526",
+    "shortAnswer": "线程池一般通过明确容量的 ThreadPoolExecutor 或合适 Executor 工厂集中提交和关闭任务。",
+    "fullAnswer": "先按任务类型和下游容量决定核心、最大、队列与拒绝，使用 ThreadFactory 命名；通过 execute 提交无返回任务，submit/invokeAll/CompletableFuture 处理结果。应用生命周期结束时 shutdown、限时 awaitTermination，必要时 shutdownNow。业务任务要传播 Trace、处理异常和中断，避免使用 Executors 的无界默认配置。 上线后持续观察队列等待时间、拒绝数和任务执行分位数，容量变化必须经过压测与回滚验证。",
+    "followUps": [
+      {
+        "question": "为什么不推荐直接 newCachedThreadPool？",
+        "answer": "最大线程近乎无界，高负载或下游阻塞时可能创建过多线程耗尽资源。"
+      },
+      {
+        "question": "如何为不同业务设置池？",
+        "answer": "按 CPU、I/O、优先级和故障域拆分，并分别限流和监控。"
+      }
+    ],
+    "pitfalls": [
+      "线程池对象应复用，不能每个请求创建一个。"
+    ],
+    "tags": [
+      "线程池",
+      "ExecutorService"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0527",
+    "shortAnswer": "线程池综合使用生产者消费者、对象复用、策略和模板方法等设计思想。",
+    "fullAnswer": "提交者与工作线程通过 BlockingQueue 构成生产者消费者；工作线程被复用，减少创建销毁；RejectedExecutionHandler、ThreadFactory 可替换，体现策略/工厂；ThreadPoolExecutor 提供 beforeExecute、afterExecute、terminated 钩子供扩展，类似模板方法。理解模式是为了说明职责与扩展点，不能把每个类机械贴标签，也不能忽略并发正确性。",
+    "followUps": [
+      {
+        "question": "Worker 为什么不只是普通对象池？",
+        "answer": "它绑定线程并循环执行任务，生命周期和同步状态由执行器管理。"
+      },
+      {
+        "question": "自定义 afterExecute 可做什么？",
+        "answer": "统计耗时、提取 Future 异常和清理上下文，但不能阻塞太久。"
+      }
+    ],
+    "pitfalls": [
+      "设计模式名称不能替代对执行流程的解释。"
+    ],
+    "tags": [
+      "线程池",
+      "设计模式"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0528",
+    "shortAnswer": "线程池使用应经历创建有界执行器、提交任务、获取结果、监控异常和优雅关闭。",
+    "fullAnswer": "生产代码显式 new ThreadPoolExecutor，设置有界队列、命名工厂和符合业务的拒绝策略。无返回任务 execute，有结果任务 submit 并限时 get；批量任务可 invokeAll，异步编排可 CompletableFuture 指定专用 Executor。任务必须响应中断、清理 ThreadLocal。Spring 环境还需把池纳入 Bean 生命周期并暴露指标。",
+    "followUps": [
+      {
+        "question": "Future.get 为什么要设超时？",
+        "answer": "防止调用线程因任务卡死永久等待，并可触发取消或降级。"
+      },
+      {
+        "question": "线程池如何观察拥塞？",
+        "answer": "监控 activeCount、poolSize、queue.size、taskCount、完成数和拒绝数。"
+      }
+    ],
+    "pitfalls": [
+      "示例默认参数不能直接用于生产流量。"
+    ],
+    "tags": [
+      "线程池",
+      "使用实践"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0529",
+    "shortAnswer": "shutdown 平滑停止接收新任务并执行完队列，shutdownNow 尝试中断运行任务并返回未开始任务。",
+    "fullAnswer": "调用 shutdown 后池进入 SHUTDOWN，已提交任务继续；shutdownNow 进入 STOP，向工作线程发 interrupt，并排出队列任务，但无法强制终止忽略中断的代码。常见关闭流程是 shutdown、awaitTermination 超时、再 shutdownNow，并再次等待。任务需响应中断，外部副作用用幂等或补偿处理。 关闭期间还要停止上游投递并保留未完成任务清单，否则进程退出可能造成任务静默丢失。",
+    "followUps": [
+      {
+        "question": "isShutdown 与 isTerminated 区别？",
+        "answer": "前者表示已发起关闭，后者表示关闭后所有任务和线程都已结束。"
+      },
+      {
+        "question": "关闭期间还能提交吗？",
+        "answer": "不能，新任务会走拒绝策略。"
+      }
+    ],
+    "pitfalls": [
+      "shutdownNow 不保证立即停止或回滚任务。"
+    ],
+    "tags": [
+      "线程池",
+      "优雅关闭"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0530",
+    "shortAnswer": "常见线程池有固定、缓存、单线程、调度、ForkJoin、工作窃取，以及 Java 21 虚拟线程执行器。",
+    "fullAnswer": "Fixed 线程数固定但工厂队列常无界；Cached 弹性大但线程数近乎无界；Single 保证串行；Scheduled 做延时周期任务；ForkJoin 适合可拆分 CPU 任务；虚拟线程适合大量阻塞式 I/O。生产中通常直接配置 ThreadPoolExecutor，避免无界风险。选择要看任务模型、JDK 版本和下游容量。",
+    "followUps": [
+      {
+        "question": "周期任务用普通线程池可以吗？",
+        "answer": "可自行调度但易出错，ScheduledThreadPoolExecutor 提供明确的延时和周期语义。"
+      },
+      {
+        "question": "虚拟线程还需要限流吗？",
+        "answer": "需要，线程便宜不代表数据库连接和下游容量无限。"
+      }
+    ],
+    "pitfalls": [
+      "线程池名称不是选型依据，实际参数才决定行为。"
+    ],
+    "tags": [
+      "线程池",
+      "ForkJoin"
+    ],
+    "difficulty": "中等",
+    "contextNote": "虚拟线程执行器需 Java 21 或相应版本支持。"
+  },
+  {
+    "sourceId": "src-0531",
+    "shortAnswer": "线程池参数应以任务耗时分布、阻塞比例、流量峰值、内存和下游容量为依据。",
+    "fullAnswer": "CPU 密集池通常接近核心数，I/O 密集可按等待/计算比例初估，但必须受数据库连接、远程限流和内存约束。队列容量可结合允许排队时间与峰值到达率估算，拒绝策略按业务选择。上线前压测并观察 P95/P99、队列、CPU、GC 和拒绝，持续按真实数据调整而不是套公式。",
+    "followUps": [
+      {
+        "question": "怎样由延迟目标估队列上限？",
+        "answer": "结合服务速率和允许等待时间按 Little 定律初估，再用突发压测校准。"
+      },
+      {
+        "question": "线上何时扩线程反而恶化？",
+        "answer": "下游已饱和或锁竞争高时，更多线程只增加排队、切换和超时。"
+      }
+    ],
+    "pitfalls": [
+      "必须为每个参数记录假设和回滚阈值。"
+    ],
+    "tags": [
+      "线程池",
+      "容量规划"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0632",
+    "shortAnswer": "反射让 Java 程序在运行时检查类结构并动态创建对象、访问成员或调用方法。",
+    "fullAnswer": "核心入口是 Class，配合 Constructor、Method、Field 和注解 API。IoC、ORM、序列化和测试框架用反射适配未知业务类型。它把部分错误推迟到运行时，也受模块封装和访问控制限制；应缓存元数据、限制外部可控类名并优先公开成员。高频路径可评估 MethodHandle 或代码生成。",
+    "followUps": [
+      {
+        "question": "Class 对象如何获得？",
+        "answer": "可用对象.getClass、类型.class、Class.forName 或类加载器加载，语义和初始化行为不同。"
+      },
+      {
+        "question": "反射会触发类初始化吗？",
+        "answer": "某些主动使用如 Class.forName 默认可触发，单纯获取 class 字面量通常不触发。"
+      }
+    ],
+    "pitfalls": [
+      "不要假设 setAccessible 在新 JDK 模块环境总可用。"
+    ],
+    "tags": [
+      "Java反射",
+      "Class"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0633",
+    "shortAnswer": "泛型通过类型参数让同一类或方法复用于多种类型，并在编译期提供类型安全。",
+    "fullAnswer": "List<String> 能阻止放入错误类型并减少强转。Java 泛型主要采用类型擦除，所以运行时通常无法直接知道 T，不能 new T、创建普通泛型数组或判断 instanceof List<String>。通配符遵循 PECS：只读生产者用 extends，写入消费者用 super。API 设计应避免原始类型和不受检转换。",
+    "followUps": [
+      {
+        "question": "泛型方法如何声明？",
+        "answer": "在返回类型前写类型参数，如 static <T> T first(List<T> values)。"
+      },
+      {
+        "question": "List<Integer> 是 List<Number> 子类型吗？",
+        "answer": "不是，泛型默认不协变，可用 List<? extends Number> 读取。"
+      }
+    ],
+    "pitfalls": [
+      "编译期安全不能替代外部数据反序列化校验。"
+    ],
+    "tags": [
+      "Java泛型",
+      "类型擦除"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0634",
+    "shortAnswer": "深拷贝可通过递归复制、序列化往返或对象映射/拷贝构造器实现。",
+    "fullAnswer": "手写复制构造器或工厂最可控，逐层创建可变子对象；序列化可快速复制整个对象图，但要求可序列化且性能、兼容和安全成本高；JSON/映射框架方便 DTO，却可能丢类型、精度和循环引用。clone 默认只是浅拷贝，必须自行复制成员。选择时明确不可变对象、共享引用和环，并用修改副本不影响原对象的测试验证。",
+    "followUps": [
+      {
+        "question": "有循环引用时递归复制怎么办？",
+        "answer": "维护原对象到副本的 IdentityHashMap，创建后登记再递归，避免无限循环并保持共享关系。"
+      },
+      {
+        "question": "不可变对象需要复制吗？",
+        "answer": "通常可以安全共享，因为其状态不会变化，但要确认内部也真正不可变。"
+      }
+    ],
+    "pitfalls": [
+      "序列化深拷贝不能处理任意资源和敏感类型。"
+    ],
+    "tags": [
+      "深拷贝",
+      "对象复制"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0635",
+    "shortAnswer": "除 new 外，Java 可通过反射、克隆、反序列化和框架工厂等方式产生对象。",
+    "fullAnswer": "Constructor.newInstance 动态调用构造器；clone 复制已有对象且要求正确实现；反序列化按数据恢复实例，通常不走普通构造器；Unsafe 或底层序列化机制可绕开构造，但不应在业务代码滥用。依赖注入容器和工厂最终也会选择某种底层创建方式。每种方式对初始化、不变量和安全校验不同，必须保证对象处于合法状态。",
+    "followUps": [
+      {
+        "question": "Class.newInstance 为什么不推荐？",
+        "answer": "它已过时，异常与构造器选择表达差，应使用 getDeclaredConstructor().newInstance。"
+      },
+      {
+        "question": "反序列化最大的安全风险是什么？",
+        "answer": "不可信数据可能实例化危险类型或绕过不变量，应使用白名单和安全格式。"
+      }
+    ],
+    "pitfalls": [
+      "“工厂创建”是设计入口，不一定是新的 JVM 创建指令。"
+    ],
+    "tags": [
+      "Java对象",
+      "反射"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0636",
+    "shortAnswer": "Java 对象常由 new、反射构造器、clone、反序列化、方法句柄或框架工厂创建。",
+    "fullAnswer": "new 最直接并执行构造初始化；Constructor.newInstance 适合运行期类型；clone 基于现有实例复制且易产生浅拷贝；反序列化重建对象图；容器或工厂隐藏具体创建策略。Unsafe.allocateInstance 能绕过构造器，风险很高，仅见于底层框架。回答应区分语言/JVM 机制与设计模式，并检查资源、校验和线程安全。",
+    "followUps": [
+      {
+        "question": "静态工厂相比构造器有什么价值？",
+        "answer": "可命名、缓存实例、返回子类型并隐藏创建细节，但底层通常仍使用 new。"
+      },
+      {
+        "question": "clone 为什么容易出错？",
+        "answer": "Object.clone 是字段级复制，可变引用仍共享，而且 Cloneable 契约不直观。"
+      }
+    ],
+    "pitfalls": [
+      "绕过构造器可能破坏 final 字段和业务不变量。"
+    ],
+    "tags": [
+      "Java对象",
+      "创建方式"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0637",
+    "shortAnswer": "Java 异常处理包括 try-catch-finally、throw/throws、try-with-resources 和统一异常映射。",
+    "fullAnswer": "checked 异常要求捕获或声明，unchecked 异常多表示编程错误或无法合理恢复。捕获应在能补充语义、重试或转换的层级进行，保留 cause；资源用 try-with-resources 保证关闭，抑制异常可从 getSuppressed 查看。服务端应把内部异常映射成稳定错误码并记录 Trace，不能吞异常或把敏感堆栈返回用户。",
+    "followUps": [
+      {
+        "question": "finally 一定执行吗？",
+        "answer": "正常和多数异常路径会执行，但进程退出、崩溃等情况不能保证。"
+      },
+      {
+        "question": "为什么不捕获 Exception 后忽略？",
+        "answer": "会丢失失败信号和上下文，使数据处于未知状态且难以诊断。"
+      }
+    ],
+    "pitfalls": [
+      "重试前必须判断操作幂等性和异常是否可恢复。"
+    ],
+    "tags": [
+      "Java异常",
+      "资源管理"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0638",
+    "shortAnswer": "注解作用范围由 @Target 决定，生命周期由 @Retention 决定，二者不能混淆。",
+    "fullAnswer": "@Target 可限制 TYPE、METHOD、FIELD、PARAMETER、CONSTRUCTOR、LOCAL_VARIABLE、ANNOTATION_TYPE、PACKAGE、TYPE_PARAMETER、TYPE_USE、MODULE、RECORD_COMPONENT 等位置；@Retention 可为 SOURCE、CLASS、RUNTIME。只有 RUNTIME 注解通常能被反射读取。@Inherited 只影响类级注解的继承，方法和接口语义不同。框架使用前应确认代理与合成注解规则。 自定义注解还应提供清晰默认值与文档，避免处理器把缺失属性和显式空值混为一谈；编译期处理和运行期反射是两条不同链路。",
+    "followUps": [
+      {
+        "question": "TYPE_USE 与 TYPE 有何区别？",
+        "answer": "TYPE 标注类等声明，TYPE_USE 可标注任何类型使用位置，如泛型参数或强转。"
+      },
+      {
+        "question": "默认 Retention 是什么？",
+        "answer": "未声明时默认为 CLASS，写入 class 文件但运行时反射不可见。"
+      }
+    ],
+    "pitfalls": [
+      "注解本身不执行逻辑，需要编译器、框架或处理器解释。"
+    ],
+    "tags": [
+      "Java注解",
+      "元注解"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0639",
+    "shortAnswer": "new 出的对象在对任何 GC Roots 都不可达后才具备回收资格，回收时机不确定。",
+    "fullAnswer": "对象离开局部作用域不代表立即不可达，可能仍被字段、集合、线程栈、JNI 或优化后的引用持有。GC 通过可达性分析判断，具体何时收集取决于分配压力和收集器；System.gc 只是建议。finalize 已不推荐，外部资源应 try-with-resources 主动关闭。排查泄漏要看引用链而不是等待 GC。",
+    "followUps": [
+      {
+        "question": "对象设为 null 会立刻回收吗？",
+        "answer": "不会，只可能减少一条引用；是否不可达及何时 GC 都不保证。"
+      },
+      {
+        "question": "循环引用能回收吗？",
+        "answer": "若整个环从 GC Roots 不可达就能回收，可达性分析不依赖引用计数。"
+      }
+    ],
+    "pitfalls": [
+      "内存回收与文件、连接释放是不同问题。"
+    ],
+    "tags": [
+      "GC",
+      "对象生命周期"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0640",
+    "shortAnswer": "网络协议分层把复杂通信拆成职责清晰的接口，便于独立演进、复用与排障。",
+    "fullAnswer": "应用层关注语义，传输层提供端到端通信，网络层负责寻址路由，链路层处理本地传输。上层依赖下层服务但不必了解具体介质，因此 HTTP 可运行在不同网络，IP 也可承载多种传输协议。分层会增加头部和抽象开销，现实协议也可能跨层优化。排障可按 DNS、连接、传输、应用逐层定位。",
+    "followUps": [
+      {
+        "question": "分层如何帮助兼容？",
+        "answer": "只要层间接口稳定，一层可替换实现而不要求所有上层重写。"
+      },
+      {
+        "question": "为什么说现实中并非严格分层？",
+        "answer": "NAT、TLS、QUIC 和应用拥塞控制等会跨越传统边界或共享信息。"
+      }
+    ],
+    "pitfalls": [
+      "分层模型是理解工具，不是所有实现的精确代码结构。"
+    ],
+    "tags": [
+      "计算机网络",
+      "分层"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0641",
+    "shortAnswer": "TCP 拥塞控制通过慢启动、拥塞避免、快速重传和恢复动态调整发送窗口。",
+    "fullAnswer": "发送方维护拥塞窗口 cwnd，并受接收窗口共同限制。开始时慢启动指数增长，达到阈值后线性增长；超时通常显著减小窗口，重复 ACK 可触发快速重传与恢复。现代算法如 CUBIC、BBR 的增长与拥塞判断不同。拥塞控制保护网络，不等同流量控制；排障需结合 RTT、丢包、重传和算法版本。",
+    "followUps": [
+      {
+        "question": "拥塞窗口与接收窗口区别是什么？",
+        "answer": "cwnd 反映网络承载估计，rwnd 反映接收端缓冲能力，发送量受较小者限制。"
+      },
+      {
+        "question": "BBR 主要依据什么？",
+        "answer": "估计瓶颈带宽和最小 RTT，而非单纯把丢包作为拥塞信号。"
+      }
+    ],
+    "pitfalls": [
+      "具体状态转换依赖采用的 TCP 算法和内核版本。"
+    ],
+    "tags": [
+      "TCP",
+      "拥塞控制"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0642",
+    "shortAnswer": "HTTP 状态码分为信息、成功、重定向、客户端错误和服务端错误五类。",
+    "fullAnswer": "常见有 200 成功、201 创建、204 无正文；301/308 永久重定向，302/307 临时；400 参数错误、401 未认证、403 禁止、404 不存在、409 冲突、429 限流；500 内部错误、502 上游响应无效、503 暂不可用、504 上游超时。REST API 应结合方法语义稳定返回，并提供业务码和 Trace，不能所有情况都用 200。 对外还应避免在错误正文泄露堆栈和内部地址，并通过重试语义区分可恢复的 503 与调用方错误。",
+    "followUps": [
+      {
+        "question": "401 和 403 如何区分？",
+        "answer": "401 表示认证缺失或无效，403 是身份已知但没有权限。"
+      },
+      {
+        "question": "哪些错误适合自动重试？",
+        "answer": "通常瞬时 429、502、503、504 可按 Retry-After 和幂等性退避重试。"
+      }
+    ],
+    "pitfalls": [
+      "状态码不能替代响应体中的安全、稳定错误信息。"
+    ],
+    "tags": [
+      "HTTP",
+      "状态码"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0643",
+    "shortAnswer": "TCP 通过序列号、确认、校验和、重传、滑动窗口与拥塞控制提供可靠有序字节流。",
+    "fullAnswer": "每个字节有序号，接收方确认已收到范围，丢失通过超时或重复 ACK 重传；校验和检测传输损坏，接收端重排并去重。滑动窗口实现流量控制，拥塞控制避免压垮网络。TCP 可靠只覆盖连接两端内核交付，不保证应用已处理或持久化；断线重连后业务仍需幂等和确认。",
+    "followUps": [
+      {
+        "question": "ACK 到达说明数据已写入数据库吗？",
+        "answer": "不说明，只表示对端 TCP 栈收到，应用处理和持久化需应用协议确认。"
+      },
+      {
+        "question": "TCP 如何发现丢包？",
+        "answer": "重传超时、重复 ACK 或选择确认等信号触发重传。"
+      }
+    ],
+    "pitfalls": [
+      "可靠传输不等于消息边界，应用需自行分帧。"
+    ],
+    "tags": [
+      "TCP",
+      "可靠传输"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0644",
+    "shortAnswer": "类型互转可能造成溢出、精度丢失、符号变化、空指针和运行时转换异常。",
+    "fullAnswer": "宽化数值转换通常安全但 long 转 float 也可能损失精度；窄化如 long 到 int 会截断高位，double 到 int 丢小数并可能饱和。包装类拆箱 null 会 NPE，错误对象强转会 ClassCastException，字符串解析可能格式错误。金额应使用 BigDecimal 并明确舍入，外部输入转换需范围校验，不能依赖静默截断。",
+    "followUps": [
+      {
+        "question": "int 转 long 为什么通常安全？",
+        "answer": "long 能精确表示所有 int 值，属于宽化转换。"
+      },
+      {
+        "question": "char 与 byte 转换要注意什么？",
+        "answer": "char 无符号且 16 位，byte 有符号 8 位，窄化可能改变数值。"
+      }
+    ],
+    "pitfalls": [
+      "编译通过不代表运行时数值语义正确。"
+    ],
+    "tags": [
+      "Java类型",
+      "类型转换"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0645",
+    "shortAnswer": "保留 int 是因为它在取值范围、内存、CPU 操作和 Java 生态间提供了高效默认整数类型。",
+    "fullAnswer": "Java 的 int 固定 32 位，范围足够覆盖数组下标、计数和多数业务字段，每元素比 long 少一半内存，缓存局部性更好；字节和短整型参与算术也会提升为 int，JVM 和处理器对其支持成熟。若业务可能超过约二十一亿才用 long。选择类型应按领域范围和数据库映射，而不是一律追求更大。",
+    "followUps": [
+      {
+        "question": "int 溢出会抛异常吗？",
+        "answer": "普通算术不会，会按二进制回绕；需要检测可用 Math.addExact 等。"
+      },
+      {
+        "question": "数组下标为什么不是 long？",
+        "answer": "Java 数组长度和索引以 int 表示，单数组也受对象与内存限制。"
+      }
+    ],
+    "pitfalls": [
+      "节省类型宽度不能以可能溢出为代价。"
+    ],
+    "tags": [
+      "int",
+      "Java类型"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0646",
+    "shortAnswer": "Java 类型转换分为自动宽化、显式窄化、装箱拆箱、引用转换和字符串解析。",
+    "fullAnswer": "byte/short/char 到 int、int 到 long 等可自动宽化；反向需强转并可能截断。基本类型与包装类可自动装箱拆箱，但 null 拆箱会 NPE。引用可向上转型，向下前应检查 instanceof；字符串用 parseXxx、valueOf 或格式库转换并处理异常。对象映射和 JSON 反序列化也需 schema、范围与精度校验。",
+    "followUps": [
+      {
+        "question": "double 转 int 的规则是什么？",
+        "answer": "小数部分向零截断，超范围按规范取边界值，NaN 转为零。"
+      },
+      {
+        "question": "String.valueOf(null) 与 null.toString 区别？",
+        "answer": "前者得到字符串 null，后者会抛 NullPointerException。"
+      }
+    ],
+    "pitfalls": [
+      "自动转换也可能丢精度，例如 long 到 float。"
+    ],
+    "tags": [
+      "Java类型",
+      "转换"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0647",
+    "shortAnswer": "金额等十进制精确计算应使用 BigDecimal，因为 double 是二进制浮点，许多十进制小数无法精确表示。",
+    "fullAnswer": "0.1 等值在 double 中是近似数，连续运算会累积误差；BigDecimal 用任意精度整数和 scale 表示十进制，更适合金额、税率和结算。构造应优先字符串或 BigDecimal.valueOf，除法需指定 scale 与 RoundingMode。比较数值用 compareTo，equals 还比较 scale。性能敏感时也可用最小货币单位 long。 跨系统传输金额时应同时约定币种、精度和舍入规则，数据库列也使用定点数，避免某一环节重新转成浮点。",
+    "followUps": [
+      {
+        "question": "为什么不推荐 new BigDecimal(0.1)？",
+        "answer": "它会把 double 已有的二进制近似精确转换进来，得到非预期长小数。"
+      },
+      {
+        "question": "compareTo 与 equals 有何不同？",
+        "answer": "compareTo 忽略尾随零的 scale 差异，equals 同时比较值和 scale。"
+      }
+    ],
+    "pitfalls": [
+      "BigDecimal 仍需明确舍入规则，不能自动决定业务精度。"
+    ],
+    "tags": [
+      "BigDecimal",
+      "精度"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0648",
+    "shortAnswer": "装箱把基本类型转换为包装对象，拆箱把包装对象取回基本值。",
+    "fullAnswer": "编译器可把 int 到 Integer 转为 valueOf，把 Integer 到 int 转为 intValue。包装类可用于泛型和表示 null，但有对象分配、缓存、内存和空指针风险；Integer 小值通常缓存，因此不能用 == 比较数值，应使用 equals 或先拆箱。高频计算优先基本类型，集合场景需关注装箱开销。",
+    "followUps": [
+      {
+        "question": "Integer a=127 与 b=127 的 == 为什么可能 true？",
+        "answer": "valueOf 通常缓存 -128 到 127，但缓存范围不是业务比较契约。"
+      },
+      {
+        "question": "拆箱何时抛 NPE？",
+        "answer": "包装引用为 null 而表达式需要基本值时。"
+      }
+    ],
+    "pitfalls": [
+      "自动装箱语法便利，但不会消除对象与空值语义。"
+    ],
+    "tags": [
+      "装箱",
+      "拆箱"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0649",
+    "shortAnswer": "Java 的 int 固定 32 位即 4 字节，long 固定 64 位即 8 字节。",
+    "fullAnswer": "int 是有符号二进制补码，范围 -2^31 到 2^31-1；long 范围 -2^63 到 2^63-1。这些位宽由 Java 语言规范固定，与 32 位或 64 位操作系统无关。包装类对象的实际内存远大于数值位宽，数组元素布局也受 JVM 对齐和压缩指针影响，不能用基本类型字节数估算整个对象。",
+    "followUps": [
+      {
+        "question": "long 字面量为什么常加 L？",
+        "answer": "超出 int 范围或需要 long 语义时用 L，推荐大写避免与数字 1 混淆。"
+      },
+      {
+        "question": "Integer 对象只占 4 字节吗？",
+        "answer": "不是，还包含对象头、对齐等开销，具体由 JVM 配置决定。"
+      }
+    ],
+    "pitfalls": [
+      "不要把 Java 位宽与 C 平台相关类型混淆。"
+    ],
+    "tags": [
+      "int",
+      "long"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0650",
+    "shortAnswer": "Integer 相比 int 能表示 null、用于泛型集合，并提供解析、比较和位运算工具方法。",
+    "fullAnswer": "int 是紧凑高效的基本值；Integer 是对象，可作为 Map/List 类型参数、参与反射和序列化框架，并用 null 表示缺失。代价是对象内存、装箱拆箱和潜在 NPE；Integer 缓存也会让 == 行为迷惑。业务字段若 null 有独立含义可用包装类，计算热点与必填值优先 int，并用 equals 比较包装值。",
+    "followUps": [
+      {
+        "question": "为什么泛型不能直接写 List<int>？",
+        "answer": "Java 泛型类型参数要求引用类型，且主要基于类型擦除实现。"
+      },
+      {
+        "question": "Integer.parseInt 与 valueOf 区别？",
+        "answer": "前者返回 int，后者返回 Integer 并可能利用缓存。"
+      }
+    ],
+    "pitfalls": [
+      "用 null 表示缺失前应定义与零的业务差异。"
+    ],
+    "tags": [
+      "Integer",
+      "Java类型"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0651",
+    "shortAnswer": "Java 提供 Integer 是为了把 int 以对象形式参与泛型、集合、反射和可空数据模型。",
+    "fullAnswer": "基本类型不继承 Object，无法直接作为泛型参数；包装类提供对象身份、null、常量、解析、比较和进制转换等 API，并通过自动装箱简化语法。代价是内存和间接访问，拆箱 null 会异常，缓存使引用比较不可靠。现代代码按语义选择，不应为了统一对象化而把所有计数都改成 Integer。",
+    "followUps": [
+      {
+        "question": "Integer.MAX_VALUE 有什么作用？",
+        "answer": "提供 int 最大值常量，可用于边界检查，但运算前仍要防溢出。"
+      },
+      {
+        "question": "为什么 == 比较 Integer 有时不一致？",
+        "answer": "== 比较对象引用，小值缓存可能同引用，超出缓存通常是不同对象。"
+      }
+    ],
+    "pitfalls": [
+      "包装类型解决表达能力，不代表数值范围更大。"
+    ],
+    "tags": [
+      "Integer",
+      "包装类"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0652",
+    "shortAnswer": "long 与 int 可以互转，int 到 long 自动宽化，long 到 int 必须显式窄化且可能溢出。",
+    "fullAnswer": "所有 int 值都能被 long 精确表示，所以可直接赋值；long 强转 int 只保留低 32 位，超范围不会自动抛错。安全转换可先做边界判断或用 Math.toIntExact，让溢出抛 ArithmeticException。数据库 ID、时间戳和计数转换尤其要谨慎，JSON 或前端数值还可能受 JavaScript 安全整数范围影响。",
+    "followUps": [
+      {
+        "question": "Math.toIntExact 适合什么？",
+        "answer": "需要保证 long 在 int 范围内，否则立即失败，避免静默截断。"
+      },
+      {
+        "question": "int 运算后再赋给 long 会避免溢出吗？",
+        "answer": "不会，int 运算先发生；应先把操作数提升为 long。"
+      }
+    ],
+    "pitfalls": [
+      "显式强转表示接受风险，不等于结果一定正确。"
+    ],
+    "tags": [
+      "Java类型",
+      "数值转换"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0653",
+    "shortAnswer": "栈保存线程调用帧和局部执行状态，堆保存由 GC 管理、可被多个线程引用的对象。",
+    "fullAnswer": "每个线程有自己的 Java 栈，方法调用创建栈帧，包含局部变量、操作数栈和返回信息；堆通常由所有线程共享，new 出的普通对象在其中分配。栈空间耗尽抛 StackOverflowError，堆不足常抛 OutOfMemoryError。JIT 逃逸分析可能消除分配，故“对象一定在堆”不是绝对实现承诺。",
+    "followUps": [
+      {
+        "question": "局部变量一定在栈上吗？",
+        "answer": "语义上属于栈帧，但 JIT 可放寄存器或消除；局部引用指向的对象通常在堆。"
+      },
+      {
+        "question": "线程越多为何内存越大？",
+        "answer": "每个线程需要栈和本地结构，-Xss 与线程数共同影响本地内存。"
+      }
+    ],
+    "pitfalls": [
+      "堆和栈比较应区分语言语义与具体 JVM 优化。"
+    ],
+    "tags": [
+      "JVM",
+      "堆栈"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0654",
+    "shortAnswer": "前后端常通过基于 HTTP/HTTPS 的 REST、GraphQL、WebSocket 或 SSE 交互。",
+    "fullAnswer": "普通请求响应多用 HTTPS 上的 JSON REST；GraphQL 适合客户端按需查询；WebSocket 提供全双工长连接；SSE 适合服务器单向事件流；文件可用 multipart 或对象存储直传。选择取决于通信方向、实时性、缓存和浏览器兼容。无论协议都要认证授权、参数校验、超时、幂等和版本管理，不能把 JSON 当作协议安全。",
+    "followUps": [
+      {
+        "question": "SSE 与 WebSocket 如何选择？",
+        "answer": "只需服务端推送且希望简单重连可用 SSE，双向低延迟交互用 WebSocket。"
+      },
+      {
+        "question": "REST 如何做兼容升级？",
+        "answer": "优先增加可选字段并保持旧语义，破坏性变化采用版本或能力协商。"
+      }
+    ],
+    "pitfalls": [
+      "生产交互应优先 HTTPS，敏感数据还需最小化。"
+    ],
+    "tags": [
+      "前后端",
+      "HTTP"
+    ],
+    "difficulty": "基础",
+    "contextNote": "题目未指定项目，按常见 Web 前后端交互回答。"
+  },
+  {
+    "sourceId": "src-0655",
+    "shortAnswer": "数组使用连续索引存储，随机访问快；链表以节点和指针连接，插入删除位置更灵活。",
+    "fullAnswer": "数组按下标 O(1) 访问且缓存局部性好，但中间插删需移动元素，动态扩容要复制；链表按位置访问 O(n)，已知节点时插删 O(1)，但节点对象和指针占空间、缓存不友好。实际 Java ArrayList 和 LinkedList 的选择还受迭代与内存影响，多数场景 ArrayList 更快。并发访问两者都需外部保护或专用容器。",
+    "followUps": [
+      {
+        "question": "为什么 LinkedList 随机访问慢？",
+        "answer": "无法通过地址偏移直接定位，必须从头或尾沿节点遍历。"
+      },
+      {
+        "question": "数组扩容的摊销复杂度为何仍是 O(1)？",
+        "answer": "偶发 O(n) 复制由多次普通追加分摊，前提是按倍数增长。"
+      }
+    ],
+    "pitfalls": [
+      "不能只看渐进复杂度而忽略缓存和对象开销。"
+    ],
+    "tags": [
+      "数组",
+      "链表"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0656",
+    "shortAnswer": "面向对象的三大特性是封装、继承和多态，它们分别解决边界、复用与替换问题。",
+    "fullAnswer": "封装把状态和实现细节藏在对象内部，只通过稳定接口维护不变量；继承让子类复用并扩展父类能力，但应满足里氏替换，避免为了少写代码而形成脆弱层级；多态则让调用方依赖抽象，在运行期替换具体实现。工程中通常优先组合而非继承，并用接口表达变化点。设计是否合理要看职责是否单一、依赖方向是否稳定，以及新增实现时是否无需修改大量调用代码。",
+    "followUps": [
+      {
+        "question": "封装是否等于给字段加private？",
+        "answer": "不等于。private只是访问控制，真正的封装还包括由方法维护业务不变量、隐藏数据结构，并避免把可变内部对象直接暴露出去。"
+      },
+      {
+        "question": "什么时候不适合使用继承？",
+        "answer": "当两个类只是复用代码、不是稳定的is-a关系，或父类变化会破坏子类时，应使用组合、委托或提取独立服务。"
+      }
+    ],
+    "pitfalls": [
+      "把继承当成代码复用工具，忽略里氏替换和父子类强耦合。"
+    ],
+    "tags": [
+      "Java",
+      "面向对象",
+      "设计原则"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Java面向对象设计语境回答。"
+  },
+  {
+    "sourceId": "src-0657",
+    "shortAnswer": "常用网络协议可按分层理解：链路层有以太网，网络层有IP/ICMP，传输层有TCP/UDP，应用层有HTTP、DNS、TLS等。",
+    "fullAnswer": "网络协议应结合职责而非只背名称。IP负责跨网络寻址和尽力而为转发；TCP提供面向连接、可靠、有序字节流，UDP保留报文边界但不保证到达；DNS把域名解析为地址；HTTP定义请求响应语义，TLS在其下提供身份认证、机密性和完整性。排障时从DNS、握手、证书、传输重试到应用状态码逐层定位，并通过超时、限流和幂等应对网络不可靠。",
+    "followUps": [
+      {
+        "question": "TCP和UDP如何选？",
+        "answer": "需要可靠有序、可接受连接开销时选TCP；强调低延迟、允许应用自行重传或容忍丢包时选UDP，如实时音视频。"
+      },
+      {
+        "question": "HTTPS属于独立传输协议吗？",
+        "answer": "通常可理解为HTTP运行在TLS之上，再由TCP承载；HTTP/3则运行在基于UDP的QUIC上，因此不能机械绑定固定传输层。"
+      }
+    ],
+    "pitfalls": [
+      "只按端口号记协议，忽略职责、版本和协议栈组合。"
+    ],
+    "tags": [
+      "计算机网络",
+      "TCP/IP",
+      "协议"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按互联网协议栈的常见工程语境回答。"
+  },
+  {
+    "sourceId": "src-0658",
+    "shortAnswer": "线程池复用线程并限制并发，可降低创建销毁成本、控制资源上限，并统一管理任务、监控和拒绝策略。",
+    "fullAnswer": "线程池的核心价值不是单纯让任务更快，而是把并发变成可治理资源。复用工作线程可减少频繁创建和上下文切换；核心线程数、最大线程数与队列共同形成背压边界；线程工厂、异常处理、指标和拒绝策略便于运维。使用时要根据CPU密集或IO密集任务估算并发，设置有界队列和明确超时，隔离不同优先级业务。关闭阶段应停止接收、等待在途任务并在超时后强制终止。",
+    "followUps": [
+      {
+        "question": "线程池为什么不建议无界队列？",
+        "answer": "无界队列会把过载转化为持续堆积，增加内存和排队延迟，最终可能OOM；有界队列能更早触发背压或降级。"
+      },
+      {
+        "question": "线程数是不是越多吞吐越高？",
+        "answer": "不是。CPU密集任务超过核心数会增加切换，IO密集任务也受连接池、下游容量和内存约束，应通过压测确定。"
+      }
+    ],
+    "pitfalls": [
+      "只配置最大线程数，却使用无界队列导致最大线程数几乎不起作用。"
+    ],
+    "tags": [
+      "Java并发",
+      "线程池",
+      "背压"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Java ThreadPoolExecutor语境回答。"
+  },
+  {
+    "sourceId": "src-0659",
+    "shortAnswer": "ArrayList、HashMap、HashSet等常用集合默认不保证并发安全；Vector、Hashtable及java.util.concurrent中的并发集合提供不同程度的线程安全。",
+    "fullAnswer": "判断集合是否线程安全，要区分单次方法与复合操作。Vector、Hashtable通过同步方法保护单次访问，但复合的先检查后执行仍可能竞态；ConcurrentHashMap支持高并发读写，CopyOnWriteArrayList适合读多写少，BlockingQueue适合生产消费。Collections.synchronizedXxx返回同步包装器，迭代时仍需在包装对象上加锁。选择时要结合一致性语义、写入比例、迭代快照和是否需要阻塞，不能只看类名带不带Concurrent。",
+    "followUps": [
+      {
+        "question": "ConcurrentHashMap的迭代是强一致的吗？",
+        "answer": "不是，它通常提供弱一致迭代，不抛ConcurrentModificationException，但遍历期间的更新可能部分可见。"
+      },
+      {
+        "question": "synchronizedList遍历时要注意什么？",
+        "answer": "必须在返回的包装列表对象上同步后再遍历，否则其他线程修改时仍可能出现竞态或异常。"
+      }
+    ],
+    "pitfalls": [
+      "把线程安全误解为任意多步业务操作都具备原子性。"
+    ],
+    "tags": [
+      "Java集合",
+      "并发安全",
+      "ConcurrentHashMap"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按JDK集合框架回答。"
+  },
+  {
+    "sourceId": "src-0660",
+    "shortAnswer": "Java常用集合包括List、Set、Queue和Map；典型实现有ArrayList、LinkedList、HashSet、TreeSet、ArrayDeque、HashMap和TreeMap。",
+    "fullAnswer": "选择集合应先看语义：List保序且允许重复，Set表达唯一性，Queue/Deque表达排队，Map维护键值映射。ArrayList随机访问快且尾部追加摊销高效；LinkedList节点开销大，实际很少仅因中间插入就更优；HashSet和HashMap提供平均常数级查找；TreeSet和TreeMap按比较规则排序，操作通常为对数级；ArrayDeque适合作栈和双端队列。还要考虑null、并发、迭代顺序和键的equals/hashCode稳定性。",
+    "followUps": [
+      {
+        "question": "为什么通常用ArrayDeque代替Stack？",
+        "answer": "Stack继承Vector，API老旧且所有操作同步；ArrayDeque语义更清晰、性能通常更好，但不允许null。"
+      },
+      {
+        "question": "HashSet如何保证元素唯一？",
+        "answer": "它底层基于HashMap，通过hashCode定位桶，再用equals确认相等；两者契约错误会破坏唯一性判断。"
+      }
+    ],
+    "pitfalls": [
+      "只根据理论复杂度选集合，忽略对象开销、访问局部性和数据规模。"
+    ],
+    "tags": [
+      "Java集合",
+      "数据结构",
+      "容器"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按现代JDK常用集合回答。"
+  },
+  {
+    "sourceId": "src-0661",
+    "shortAnswer": "动态数组用连续数组保存元素，在容量不足时分配更大数组并搬迁；随机访问为O(1)，扩容插入是摊销O(1)。",
+    "fullAnswer": "实现动态数组需要维护底层数组、逻辑size和容量capacity。get/set先做边界检查；add在size等于capacity时按固定倍率扩容，用数组复制搬迁有效元素，再写入并递增size；remove需移动后缀并清空末尾引用，避免对象无法回收。扩容倍率要平衡复制次数和空间浪费，还要检查整数溢出。若允许并发，不能只给扩容加锁，因为size更新、读写可见性和迭代也需要一致的同步策略。",
+    "followUps": [
+      {
+        "question": "为什么说追加是摊销O(1)？",
+        "answer": "大多数追加只写一个位置，少数扩容需要复制O(n)个元素；按几何倍数扩容后，把复制成本分摊到多次追加上仍是常数级。"
+      },
+      {
+        "question": "删除后为什么要把末尾槽位置null？",
+        "answer": "移动元素后末尾仍可能保存旧引用，不清空会让对象继续可达，造成不必要的内存占用。"
+      }
+    ],
+    "pitfalls": [
+      "每次新增一个元素都只扩容一个槽，导致累计复制成本退化为O(n²)。"
+    ],
+    "tags": [
+      "数据结构",
+      "动态数组",
+      "Java"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按手写类似ArrayList的动态数组回答。"
+  },
+  {
+    "sourceId": "src-0662",
+    "shortAnswer": "MQ选型先比较可靠性、顺序、延迟、吞吐、消费模型、运维生态和团队经验，再用业务约束做取舍。",
+    "fullAnswer": "没有脱离场景的最佳MQ。Kafka擅长高吞吐日志流与可重放分区；RocketMQ对事务消息、延迟消息和业务消息治理支持较完整；RabbitMQ路由灵活、低延迟且协议生态成熟。选型时先明确峰值吞吐、消息大小、可接受丢失与重复、顺序范围、积压恢复时间和跨机房要求，再做故障注入和容量压测。无论产品，都要设计生产确认、持久化、副本、消费幂等、重试上限、死信和监控，避免把可靠性全交给中间件。",
+    "followUps": [
+      {
+        "question": "如何验证选型结论？",
+        "answer": "用代表性消息大小和并发压测吞吐、P99延迟、积压恢复，并模拟节点宕机、网络分区和消费者反复失败。"
+      },
+      {
+        "question": "业务要求严格顺序时怎么做？",
+        "answer": "先缩小为同一业务键内有序，将同键消息路由到同一分区或队列并串行消费，同时处理重试造成的阻塞。"
+      }
+    ],
+    "pitfalls": [
+      "只看官方峰值吞吐，不验证本公司消息模型、硬件和故障恢复。"
+    ],
+    "tags": [
+      "消息队列",
+      "技术选型",
+      "可靠性"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "题目未指定已用产品，按通用MQ选型框架回答。"
+  },
+  {
+    "sourceId": "src-0663",
+    "shortAnswer": "HashMap在元素数超过capacity乘loadFactor时扩容；首次插入也可能触发延迟初始化，树化时容量过小会优先扩容。",
+    "fullAnswer": "以常见JDK 8实现为例，HashMap维护threshold，通常等于容量乘负载因子，put后size超过threshold便扩为原容量两倍。默认负载因子0.75是在冲突概率与空间占用间折中。桶中节点达到树化阈值时，若整表容量小于最小树化容量，先扩容而非立即红黑树化。扩容会重新分配桶位置，但JDK 8可利用旧容量对应的哈希位，把链表拆成原索引和原索引加旧容量两组。具体阈值属于实现细节，应说明JDK版本。",
+    "followUps": [
+      {
+        "question": "为什么不是每次冲突都扩容？",
+        "answer": "冲突可能来自哈希分布或相同低位，立即扩容代价高且未必有效；负载阈值以整体密度决定扩容时机。"
+      },
+      {
+        "question": "自定义键对扩容有什么风险？",
+        "answer": "若键放入后参与hashCode或equals的字段发生变化，扩容或查找后可能无法定位原条目，因此键应保持不可变。"
+      }
+    ],
+    "pitfalls": [
+      "把桶树化阈值误说成唯一扩容条件。"
+    ],
+    "tags": [
+      "HashMap",
+      "Java集合",
+      "JDK8"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体数值按JDK 8常见实现说明，不保证其他JDK内部完全相同。"
+  },
+  {
+    "sourceId": "src-0664",
+    "shortAnswer": "RocketMQ可靠性需要生产端确认、Broker持久化与副本、消费端幂等和受控重试共同保证，不能依赖单一配置。",
+    "fullAnswer": "生产者应使用同步发送或可靠回调，设置超时与有限重试，并给业务消息唯一键；Broker侧根据业务损失容忍度选择同步刷盘和主从复制策略，监控复制落后与磁盘；消费者只有在业务事务成功后确认，失败进入重试，超过阈值转死信并告警。由于发送超时、主从切换和消费重试都可能带来重复，端到端通常是至少一次而非天然恰好一次，必须以业务唯一键或去重表实现幂等。还应演练宕机、网络分区和积压恢复。",
+    "followUps": [
+      {
+        "question": "事务消息解决了什么问题？",
+        "answer": "它协调本地事务与消息发送，通过半消息和事务状态回查降低二者不一致，但消费端仍需幂等。"
+      },
+      {
+        "question": "同步刷盘是否绝对不丢消息？",
+        "answer": "不是，还受副本策略、硬件故障、配置和运维操作影响；应结合多副本、故障域隔离和灾备验证。"
+      }
+    ],
+    "pitfalls": [
+      "宣称开启重试就能既不丢也不重，忽略幂等与死信处置。"
+    ],
+    "tags": [
+      "RocketMQ",
+      "消息可靠性",
+      "幂等"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "RocketMQ配置和能力随版本变化，回答聚焦通用端到端保障。"
+  },
+  {
+    "sourceId": "src-0665",
+    "shortAnswer": "Java动态代理常见实现有JDK接口代理与基于子类字节码生成的代理；前者要求接口，后者不能覆盖final类或final方法。",
+    "fullAnswer": "JDK动态代理通过Proxy和InvocationHandler在运行时生成实现目标接口的代理类，调用统一进入invoke；没有合适接口时，框架常用Byte Buddy、CGLIB等生成目标类子类并拦截可覆盖方法。代理适合日志、事务、鉴权等横切逻辑，但要注意自调用可能绕过代理、方法可见性、final限制、异常包装和代理对象身份。框架版本可能更换字节码库或默认策略，因此面试应讲机制和边界，具体API以所用版本文档为准。",
+    "followUps": [
+      {
+        "question": "为什么Spring中同类自调用可能让事务失效？",
+        "answer": "外部调用经过代理才触发拦截，同一对象内部用this调用方法通常不再经过代理，事务通知因而不会执行。"
+      },
+      {
+        "question": "JDK代理和子类代理如何选择？",
+        "answer": "有稳定接口并希望面向抽象时可用JDK代理；需要代理无接口类时用子类代理，但需接受final等限制。"
+      }
+    ],
+    "pitfalls": [
+      "认为动态代理可以拦截对象内部任何调用或final方法。"
+    ],
+    "tags": [
+      "Java",
+      "动态代理",
+      "AOP"
+    ],
+    "difficulty": "中等",
+    "contextNote": "代理框架实现和默认策略存在版本差异。"
+  },
+  {
+    "sourceId": "src-0666",
+    "shortAnswer": "实现Runnable只需定义run方法，再把实例交给Thread或Executor执行；直接调用run不会创建新线程。",
+    "fullAnswer": "Runnable表示无返回值、不能直接抛受检异常的任务。可以用类、匿名类或lambda实现，然后由new Thread(r).start()启动，生产环境通常提交给ExecutorService以复用线程和治理并发。任务应处理中断：阻塞方法抛InterruptedException时，要么向上结束任务，要么恢复中断标记，不能静默吞掉。共享状态需通过不可变对象、线程安全容器或同步保护。关闭执行器时还要拒绝新任务并等待在途任务，避免资源泄漏。",
+    "followUps": [
+      {
+        "question": "start和run有什么区别？",
+        "answer": "start请求JVM创建新执行线程，随后在线程中回调run；直接run只是当前线程的普通方法调用。"
+      },
+      {
+        "question": "Runnable如何获得执行结果？",
+        "answer": "可把结果写入线程安全的共享载体，但更合适的是改用Callable配合Future，或CompletableFuture。"
+      }
+    ],
+    "pitfalls": [
+      "在run中捕获InterruptedException后什么也不做，导致任务无法响应取消。"
+    ],
+    "tags": [
+      "Java线程",
+      "Runnable",
+      "并发"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Java标准并发API回答。"
+  },
+  {
+    "sourceId": "src-0667",
+    "shortAnswer": "Callable可返回结果并抛异常，FutureTask同时实现Runnable和Future，可包装Callable交给线程或线程池执行。",
+    "fullAnswer": "Callable的call与Runnable的run相比支持返回值和受检异常。FutureTask把任务执行状态、结果获取和取消封装在一起，可以由Thread运行，也可提交给Executor。get会阻塞并把任务异常包装为ExecutionException，因此应设置超时并检查根因；cancel(true)只是发出中断请求，任务代码必须正确响应中断，不能把它当强制终止。FutureTask通常只能成功执行一次。若需要组合多个异步步骤，CompletableFuture或结构化并发工具往往更清晰，但具体能力依JDK版本。",
+    "followUps": [
+      {
+        "question": "FutureTask调用多次run会怎样？",
+        "answer": "其状态机只允许任务从初始态执行一次，后续run通常不会再次调用底层Callable。"
+      },
+      {
+        "question": "cancel(true)一定能停止任务吗？",
+        "answer": "不一定。它会尝试中断执行线程，若任务不检查中断、执行不可中断阻塞或已完成，就无法按期望停止。"
+      }
+    ],
+    "pitfalls": [
+      "无超时调用Future.get，造成请求线程无限等待。"
+    ],
+    "tags": [
+      "Java并发",
+      "Callable",
+      "FutureTask"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Java标准库语义回答；结构化并发的正式程度随JDK版本变化。"
+  },
+  {
+    "sourceId": "src-0668",
+    "shortAnswer": "反射允许运行时检查类型、成员和注解并动态调用，但会削弱编译期约束，且受模块、访问权限与性能成本限制。",
+    "fullAnswer": "Java反射以Class为入口，可查询构造器、字段、方法、泛型元数据和注解，并动态创建对象或调用成员，因此常用于依赖注入、序列化和插件发现。它把一部分错误推迟到运行期，还可能破坏封装；现代JDK的模块系统和强封装会限制非法深反射，setAccessible并非永远有效。性能敏感路径应缓存查找结果或考虑MethodHandle、代码生成。处理外部输入时必须做类型白名单，不能让用户任意指定类名和方法，否则会扩大攻击面。",
+    "followUps": [
+      {
+        "question": "反射能获得所有泛型实参吗？",
+        "answer": "只能读取类文件中保留的声明泛型信息；运行时对象本身受类型擦除影响，局部推断出的实参通常无法直接恢复。"
+      },
+      {
+        "question": "反射调用为什么可能变慢？",
+        "answer": "成员查找、访问检查、参数装箱和间接调用都有成本；JVM会优化部分路径，但热点代码仍应基准测试而非凭感觉。"
+      }
+    ],
+    "pitfalls": [
+      "用反射绕过访问控制处理不可信输入，造成封装破坏或安全风险。"
+    ],
+    "tags": [
+      "Java",
+      "反射",
+      "运行时"
+    ],
+    "difficulty": "中等",
+    "contextNote": "模块访问限制按现代JDK说明，不同JDK版本细节有差异。"
+  },
+  {
+    "sourceId": "src-0669",
+    "shortAnswer": "线程池由任务提交、工作线程、阻塞队列、线程工厂和拒绝策略组成，用于有界地调度并发任务。",
+    "fullAnswer": "以ThreadPoolExecutor为例，任务到来时先创建核心线程，核心线程满后进入队列；队列无法接收时再扩到最大线程数；仍过载则执行拒绝策略。线程空闲超过keepAliveTime可被回收，核心线程是否超时可配置。设计时要按任务性质拆池，使用有界队列，给下游调用设置超时，并监控活跃线程、队列长度、拒绝数和任务延迟。任务异常需显式记录，应用关闭时按先停止接收、再等待、最后强停的流程释放资源。",
+    "followUps": [
+      {
+        "question": "execute和submit在异常表现上有何不同？",
+        "answer": "execute任务未捕获异常通常交给线程的UncaughtExceptionHandler；submit会把异常保存在Future中，若不get可能被忽略。"
+      },
+      {
+        "question": "拒绝策略应该怎么选？",
+        "answer": "应结合是否允许丢弃、调用方能否降速和任务优先级选择；CallerRuns可形成背压，但也可能拖慢关键请求线程。"
+      }
+    ],
+    "pitfalls": [
+      "直接使用Executors返回的默认无界队列线程池而不评估过载。"
+    ],
+    "tags": [
+      "Java并发",
+      "ThreadPoolExecutor",
+      "线程池"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按ThreadPoolExecutor的常见实现语义回答。"
+  },
+  {
+    "sourceId": "src-0670",
+    "shortAnswer": "浏览器端JWT可放在HttpOnly、Secure、SameSite Cookie中降低脚本窃取风险；若放内存则刷新会丢失，localStorage更易受XSS影响。",
+    "fullAnswer": "JWT存储没有绝对安全选项。高敏Web应用常让服务端把令牌写入HttpOnly、Secure、合适SameSite属性的Cookie，JavaScript无法读取，但Cookie会自动携带，需要配合SameSite、CSRF令牌和来源校验防CSRF。放localStorage便于前端管理，却会在XSS时被直接读取并长期泄露；仅放内存可缩短暴露面，但页面刷新后需用受保护的刷新令牌恢复。还应使用短期访问令牌、轮换刷新令牌、严格CSP、最小权限和服务端撤销机制。",
+    "followUps": [
+      {
+        "question": "HttpOnly能防住所有XSS攻击吗？",
+        "answer": "不能。它降低令牌被脚本直接读取的风险，但恶意脚本仍可能借用户会话发请求，因此仍要防XSS并限制敏感操作。"
+      },
+      {
+        "question": "Cookie存JWT为什么还要防CSRF？",
+        "answer": "因为浏览器会自动把Cookie附加到目标站点请求，攻击者可诱导跨站请求；SameSite和CSRF令牌可校验请求意图。"
+      }
+    ],
+    "pitfalls": [
+      "把长期高权限JWT放localStorage，并认为签名令牌不会被盗用。"
+    ],
+    "tags": [
+      "JWT",
+      "Web安全",
+      "身份认证"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按浏览器Web应用场景回答，移动端应使用系统安全存储。"
+  },
+  {
+    "sourceId": "src-0671",
+    "shortAnswer": "禁用Cookie后，Session仍可工作，但服务端必须通过URL重写、自定义请求头等方式传递会话ID，且要承担泄露风险。",
+    "fullAnswer": "Session数据通常保存在服务端，Cookie只是传递会话标识的常用途径。客户端禁用Cookie时，可把会话ID编码进URL、放入表单隐藏字段，或在可控API客户端用自定义头传输。URL重写会让标识进入浏览历史、日志、Referer和分享链接，容易泄露与固定会话，因此现代公开Web应用通常不推荐。无论载体如何，都应在登录后轮换会话ID，设置短时有效、绑定合理上下文，并通过TLS传输；若无法安全携带标识，应要求启用Cookie或改用明确的令牌认证。",
+    "followUps": [
+      {
+        "question": "URL重写如何导致会话泄露？",
+        "answer": "带会话ID的URL可能被代理和服务日志记录、被用户复制分享，或通过Referer发送给其他站点。"
+      },
+      {
+        "question": "Session数据是否一定存在单机内存？",
+        "answer": "不一定，可存在本机、共享缓存或数据库；集群部署需考虑路由粘性、共享存储及失效一致性。"
+      }
+    ],
+    "pitfalls": [
+      "认为禁用Cookie就意味着Session机制本身完全不可用。"
+    ],
+    "tags": [
+      "Session",
+      "Cookie",
+      "Web安全"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按传统服务端Web会话语境回答。"
+  },
+  {
+    "sourceId": "src-0672",
+    "shortAnswer": "线程池通过状态控制、Worker集合和任务队列协调执行：核心线程优先、随后入队、再扩容，最终拒绝。",
+    "fullAnswer": "ThreadPoolExecutor提交任务时会结合运行状态和workerCount做分支：低于corePoolSize先加Worker；否则尝试入队，并二次检查线程池是否已关闭或是否缺少工作线程；队列失败后尝试增加到maximumPoolSize；仍失败则拒绝。Worker循环从队列取任务，运行前后提供钩子，空闲超时或池状态变化时退出。关闭时shutdown只处理已提交任务，shutdownNow尝试中断并返回未开始任务。理解二次检查很重要，它用于处理入队与关闭并发发生的竞态。",
+    "followUps": [
+      {
+        "question": "任务成功入队后为什么还要复查状态？",
+        "answer": "入队期间线程池可能被关闭，需要移除并拒绝该任务；同时若当前没有Worker，还需补一个线程消费队列。"
+      },
+      {
+        "question": "corePoolSize是否表示线程池始终有这些线程？",
+        "answer": "不是，默认按需创建；可预启动核心线程，且开启核心线程超时后它们也可能被回收。"
+      }
+    ],
+    "pitfalls": [
+      "只背核心、队列、最大线程的顺序，忽略状态竞态和队列二次检查。"
+    ],
+    "tags": [
+      "Java并发",
+      "线程池原理",
+      "ThreadPoolExecutor"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按OpenJDK ThreadPoolExecutor总体机制说明，内部细节可能随版本调整。"
+  },
+  {
+    "sourceId": "src-0673",
+    "shortAnswer": "Cookie是浏览器保存并随请求发送的小型数据，Session是服务端维护的会话状态；两者常用会话ID关联但并非互相等同。",
+    "fullAnswer": "Cookie存放在客户端，受域、路径、过期时间、SameSite、Secure和HttpOnly等属性约束，每次匹配请求会自动携带；Session把业务会话数据放在服务端，客户端通常只持有随机会话ID。Cookie便于扩展但有容量、隐私、XSS与CSRF风险；Session便于服务端撤销，却需要存储、过期清理和集群共享。身份系统还可使用Authorization头令牌，因此“Cookie对比Session”应分别从存储位置、生命周期、网络行为和安全控制回答。",
+    "followUps": [
+      {
+        "question": "删除Cookie是否等于销毁Session？",
+        "answer": "不一定，只是客户端丢失标识；服务端会话可能继续存在直到显式删除或过期。"
+      },
+      {
+        "question": "Session一定比Cookie安全吗？",
+        "answer": "不一定。若会话ID被窃取同样会被冒用，仍需TLS、随机标识、轮换、过期和CSRF防护。"
+      }
+    ],
+    "pitfalls": [
+      "把敏感业务数据明文放Cookie，或把会话ID设计成可预测值。"
+    ],
+    "tags": [
+      "Cookie",
+      "Session",
+      "Web"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按浏览器与传统服务端会话回答。"
+  },
+  {
+    "sourceId": "src-0674",
+    "shortAnswer": "Lock是显式锁接口，常用实现ReentrantLock支持可中断、超时、公平策略和多个Condition，读写场景可用ReentrantReadWriteLock。",
+    "fullAnswer": "与synchronized相比，Lock要求显式lock/unlock，因此必须在成功加锁后用try-finally释放。ReentrantLock可选择公平或非公平获取，提供tryLock、lockInterruptibly和多个Condition，适合需要超时取消或多个等待队列的场景；ReentrantReadWriteLock允许多个读者，但写竞争、锁降级和饥饿需要评估；StampedLock提供乐观读但不是可重入锁，使用更易出错。锁只保护约定访问的共享状态，选择时应优先简单正确，再用压测决定是否需要更复杂实现。",
+    "followUps": [
+      {
+        "question": "公平锁一定更好吗？",
+        "answer": "不一定。公平锁降低插队和长期饥饿，但通常增加调度与切换开销，吞吐可能低于非公平锁。"
+      },
+      {
+        "question": "Condition.await前有什么要求？",
+        "answer": "当前线程必须持有关联Lock；await会原子释放锁并等待，唤醒后重新竞争锁，且应在while条件循环中使用。"
+      }
+    ],
+    "pitfalls": [
+      "加锁后没有放在finally中解锁，异常路径造成永久阻塞。"
+    ],
+    "tags": [
+      "Java并发",
+      "Lock",
+      "ReentrantLock"
+    ],
+    "difficulty": "中等",
+    "contextNote": "StampedLock等具体语义应以所用JDK版本文档为准。"
+  },
+  {
+    "sourceId": "src-0675",
+    "shortAnswer": "JVM主要通过可达性分析判断对象是否可回收：从GC Roots出发不可到达的对象才成为回收候选。",
+    "fullAnswer": "可达性分析从线程栈和寄存器中的引用、静态字段、JNI引用等GC Roots沿引用图遍历。未被标记为可达的对象可进入回收流程，但“不可达”不等于立刻释放，回收时机由收集器决定，终结机制也不应作为资源管理手段。强、软、弱、虚引用会影响对象可达性和通知方式。循环引用不会妨碍Tracing GC。排查内存泄漏时要从堆转储找到对象到GC Root的引用链，定位本应失效却仍被缓存、线程或监听器持有的路径。",
+    "followUps": [
+      {
+        "question": "引用计数为什么难以处理循环引用？",
+        "answer": "两个对象可互相引用使计数均不为零，即使外部已无法访问；可达性分析从Roots出发则能识别这组对象不可达。"
+      },
+      {
+        "question": "不可达对象能否立即判断析构时刻？",
+        "answer": "不能。Java不承诺对象何时被GC，外部资源应使用try-with-resources或显式close，而不是依赖finalize。"
+      }
+    ],
+    "pitfalls": [
+      "把System.gc当成强制立即回收，或用finalize释放关键资源。"
+    ],
+    "tags": [
+      "JVM",
+      "垃圾回收",
+      "可达性分析"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按主流Tracing GC与现代JDK语境回答。"
+  },
+  {
+    "sourceId": "src-0676",
+    "shortAnswer": "常见GC算法有标记-清除、复制、标记-整理和分代收集；现代收集器通常组合它们并增加并发、分区等机制。",
+    "fullAnswer": "标记-清除先识别存活对象再回收空闲块，实现简单但可能产生碎片；复制算法把存活对象搬到另一空间，分配快却需预留空间；标记-整理把存活对象压缩到一端，减少碎片但移动成本较高。分代假设多数对象朝生夕灭，让年轻代采用复制、老年代采用适合高存活率的方法。具体如G1、ZGC、Shenandoah会按Region、并发标记或着色指针等实现停顿目标。算法选择需结合吞吐、尾延迟、堆大小和回收余量压测。",
+    "followUps": [
+      {
+        "question": "并发GC是否没有STW？",
+        "answer": "不是。并发阶段减少停顿，但根扫描、重定位或其他阶段仍可能有短暂停顿，具体取决于收集器和版本。"
+      },
+      {
+        "question": "复制算法为什么适合年轻代？",
+        "answer": "年轻代通常存活对象少，只复制少量存活对象即可回收大片空间，复制成本相对低。"
+      }
+    ],
+    "pitfalls": [
+      "只凭平均停顿选择收集器，忽略P99停顿、CPU开销和分配速率。"
+    ],
+    "tags": [
+      "JVM",
+      "GC算法",
+      "内存管理"
+    ],
+    "difficulty": "中等",
+    "contextNote": "收集器内部实现随JDK版本演进，回答聚焦算法原理。"
+  },
+  {
+    "sourceId": "src-0677",
+    "shortAnswer": "StackOverflowError多由调用栈过深或无限递归导致；OutOfMemoryError表示某类内存区域或本地资源无法满足分配。",
+    "fullAnswer": "StackOverflowError典型场景是递归没有终止条件、递归深度过大，或单帧局部变量过多使线程栈耗尽。OutOfMemoryError并不只指Java堆：持续保留对象可造成Java heap space，类加载器泄漏可能耗尽Metaspace，大量直接缓冲区可触发Direct buffer memory，过量线程会因本地内存不足无法创建线程。排查要保留错误消息、GC日志、线程和堆转储，区分泄漏与容量不足；不要先盲目增大内存，因为这可能只延迟故障。",
+    "followUps": [
+      {
+        "question": "递归改循环一定能解决StackOverflow吗？",
+        "answer": "通常能消除递归栈增长，但仍要检查循环状态是否有界及所用显式容器是否可能耗尽堆。"
+      },
+      {
+        "question": "发生heap OOM首先看什么？",
+        "answer": "看错误上下文、堆使用和GC行为，再用堆转储比较大对象与到GC Roots的引用链，判断是流量峰值、配置不足还是泄漏。"
+      }
+    ],
+    "pitfalls": [
+      "捕获Error后继续提供服务，导致进程处于资源极度不足的不可靠状态。"
+    ],
+    "tags": [
+      "JVM",
+      "异常",
+      "内存故障"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按HotSpot常见错误类型举例，实际诊断以错误消息为准。"
+  },
+  {
+    "sourceId": "src-0678",
+    "shortAnswer": "分层通过明确接口把不同职责隔离，使每层可独立演进、复用和排障，但会增加封装、转换与跨层定位成本。",
+    "fullAnswer": "若题目指网络协议分层，物理和链路层负责局部传输，网络层负责跨网寻址，传输层提供端到端通信，应用层定义业务语义。每层只依赖相邻层的抽象，上层无需理解网卡和路由细节，不同厂商也能按协议互操作；排障可从链路、IP、端口到应用逐层缩小范围。代价是报文逐层封装、重复能力和跨层优化困难。工程上允许经过论证的跨层信息，但不能破坏安全边界或让上层绑定具体实现。",
+    "followUps": [
+      {
+        "question": "网络分层与OSI七层必须一一对应吗？",
+        "answer": "不必。OSI是参考模型，互联网工程常用TCP/IP四层或五层表述，关键是说明各层职责和映射。"
+      },
+      {
+        "question": "分层越多越好吗？",
+        "answer": "不是。过多层会增加调用链、数据转换和认知负担，应让每层有清晰稳定的职责，否则应合并。"
+      }
+    ],
+    "pitfalls": [
+      "只说解耦和复用，不说明层间接口、性能成本与故障边界。"
+    ],
+    "tags": [
+      "计算机网络",
+      "分层架构",
+      "TCP/IP"
+    ],
+    "difficulty": "中等",
+    "contextNote": "原题缺少上下文；结合相邻网络题，按网络协议分层作答。"
+  },
+  {
+    "sourceId": "src-0679",
+    "shortAnswer": "IoC把对象创建和依赖装配交给容器，AOP通过代理或织入统一处理日志、事务、鉴权等横切关注点。",
+    "fullAnswer": "IoC的常见实现是依赖注入：类声明所需依赖，容器根据配置和生命周期提供实例，从而降低对具体实现和构造流程的耦合。AOP把切点匹配的方法调用交给通知逻辑，在核心业务之外统一开启事务、记录指标或鉴权。二者常结合使用，但边界不同：IoC管理对象关系，AOP重组调用行为。使用AOP时需注意代理自调用、切点过宽、异常和事务传播；安全检查不能只依赖容易绕过的内部代理层，还要在入口和资源层建立防线。",
+    "followUps": [
+      {
+        "question": "构造器注入有什么优势？",
+        "answer": "依赖显式且可设为final，创建后对象即完整，测试时也容易直接传入替身；还能更早暴露循环依赖。"
+      },
+      {
+        "question": "AOP能否代理private方法？",
+        "answer": "基于Spring常见代理机制通常不能拦截private方法；编译期或加载期织入机制能力不同，应说明具体实现。"
+      }
+    ],
+    "pitfalls": [
+      "把所有业务流程藏进切面，导致调用关系不可见且难以调试。"
+    ],
+    "tags": [
+      "Spring",
+      "IoC",
+      "AOP"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring常见代理式AOP回答，织入能力随框架与版本不同。"
+  },
+  {
+    "sourceId": "src-0680",
+    "shortAnswer": "JVM内存通常按运行时数据区说明：堆、方法区、虚拟机栈、本地方法栈和程序计数器，并另有直接内存等本地资源。",
+    "fullAnswer": "线程私有的程序计数器记录执行位置，虚拟机栈由栈帧保存局部变量、操作数栈等；堆是对象分配和GC的主要区域；方法区是规范概念，HotSpot在现代JDK用Metaspace存放类元数据；本地方法栈服务JNI等本地调用。直接内存不属于规范中的运行时数据区，却会受本机内存和MaxDirectMemorySize等约束。对象不保证都实际进入堆，JIT可能做逃逸分析和标量替换。诊断时应根据具体错误区分堆、元空间、线程栈与本地内存。",
+    "followUps": [
+      {
+        "question": "Java对象一定分配在堆上吗？",
+        "answer": "语言语义可这样理解，但JIT可通过逃逸分析消除分配或标量替换，实际物理布局是实现细节。"
+      },
+      {
+        "question": "方法区是否等于永久代？",
+        "answer": "不等于。方法区是JVM规范概念；永久代是旧HotSpot实现，现代HotSpot主要用本地内存中的Metaspace。"
+      }
+    ],
+    "pitfalls": [
+      "把JVM运行时数据区与Java内存模型JMM混为一谈。"
+    ],
+    "tags": [
+      "JVM",
+      "内存结构",
+      "运行时数据区"
+    ],
+    "difficulty": "中等",
+    "contextNote": "原题“JVM内存模型”有歧义；结合相邻题按运行时内存结构回答，并区别JMM。"
+  },
+  {
+    "sourceId": "src-0681",
+    "shortAnswer": "MVC把请求处理分为Model、View和Controller，使领域状态、展示和流程协调相互分离。",
+    "fullAnswer": "Controller接收输入、做协议适配与流程编排，调用Model中的领域或应用逻辑，再选择View或返回表示；View负责把数据呈现给用户，Model承载业务状态和规则。分离后同一模型可支持不同界面，展示改动较少影响业务，也便于分层测试。Web框架中的Model有时只是传给模板的数据容器，不应与领域模型混淆。Controller要保持薄，校验、鉴权和事务边界应清晰，避免把所有业务堆进控制器。",
+    "followUps": [
+      {
+        "question": "MVC和三层架构是一回事吗？",
+        "answer": "不是。MVC侧重交互与展示职责，三层架构常指表示、业务和数据访问；二者可以组合但维度不同。"
+      },
+      {
+        "question": "REST API没有服务端页面还算MVC吗？",
+        "answer": "很多框架仍沿用Controller和Model概念，View可表现为JSON序列化；也可直接称分层Web架构，关键是职责清晰。"
+      }
+    ],
+    "pitfalls": [
+      "把Model等同于数据库实体，导致领域规则散落在Controller。"
+    ],
+    "tags": [
+      "架构设计",
+      "MVC",
+      "Web"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按服务端Web MVC的一般语境回答。"
+  },
+  {
+    "sourceId": "src-0682",
+    "shortAnswer": "常见List有ArrayList和LinkedList；线程安全选择包括CopyOnWriteArrayList、同步包装List，以及在外部正确加锁。",
+    "fullAnswer": "ArrayList基于动态数组，随机访问和顺序遍历通常更好；LinkedList是双向链表，节点开销与缓存局部性较差，只有已持有节点位置等特定场景才体现插删优势。Vector是历史同步实现，Collections.synchronizedList提供同步包装，但复合操作和迭代仍需外部同步。CopyOnWriteArrayList写入时复制数组，读者看到稳定快照，适合读多写少、小规模列表。若高频写或需阻塞传递，应重新评估数据结构而非强行使用线程安全List。",
+    "followUps": [
+      {
+        "question": "CopyOnWriteArrayList为什么不适合写多场景？",
+        "answer": "每次结构性写入都要加锁并复制底层数组，耗时和内存开销随列表长度增加。"
+      },
+      {
+        "question": "synchronizedList的contains后add原子吗？",
+        "answer": "两个调用各自同步但组合不是原子，需要在同一把包装器锁内执行，或使用更合适的并发抽象。"
+      }
+    ],
+    "pitfalls": [
+      "认为线程安全List的迭代一定能看到最新数据。"
+    ],
+    "tags": [
+      "Java集合",
+      "List",
+      "线程安全"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按JDK集合实现回答。"
+  },
+  {
+    "sourceId": "src-0683",
+    "shortAnswer": "常见Map有HashMap、LinkedHashMap、TreeMap；并发场景常用ConcurrentHashMap，或使用同步包装器保护普通Map。",
+    "fullAnswer": "HashMap提供平均常数级访问但不保证顺序；LinkedHashMap维护插入或访问顺序，可构建简单LRU；TreeMap按自然顺序或Comparator排序，操作通常为O(log n)。Hashtable是历史同步类，ConcurrentHashMap通过更细粒度协调和CAS等机制支持高并发，并提供compute、merge等原子复合操作。Collections.synchronizedMap包装后，遍历仍须在包装对象上同步。选择还要考虑null支持、顺序、一致性和键不可变性；跨多个键的业务事务不能靠线程安全Map自动保证。",
+    "followUps": [
+      {
+        "question": "ConcurrentHashMap为什么不允许null？",
+        "answer": "并发读取时null需要明确表示键不存在，若允许null值会产生歧义，也不利于无锁或弱同步读取语义。"
+      },
+      {
+        "question": "如何实现并发计数？",
+        "answer": "可用compute或merge做单键原子更新；高竞争统计可将值设计为LongAdder，但读取是近似瞬时汇总。"
+      }
+    ],
+    "pitfalls": [
+      "用containsKey后put实现并发初始化，产生重复创建或覆盖。"
+    ],
+    "tags": [
+      "Java集合",
+      "Map",
+      "ConcurrentHashMap"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按现代JDK集合语义回答。"
+  },
+  {
+    "sourceId": "src-0684",
+    "shortAnswer": "主动关闭方在四次挥手后进入TIME_WAIT，以便重传最后ACK并让旧报文在网络中消失，避免污染后续同四元组连接。",
+    "fullAnswer": "TCP关闭时，被动方可能先ACK再等待应用关闭，随后发送FIN；主动方收到FIN后回复ACK并进入TIME_WAIT，通常等待两个最大报文生存时间。若最后ACK丢失，被动方会重发FIN，主动方仍能再次确认；等待也给旧连接的延迟报文足够时间过期。TIME_WAIT多并不等于泄漏，但可能消耗端口和连接表。应优先采用连接复用、合理负载均衡和内核容量评估，不能通过危险参数粗暴跳过协议安全。",
+    "followUps": [
+      {
+        "question": "为什么是主动关闭方进入TIME_WAIT？",
+        "answer": "它发送最后ACK，需要保留状态处理对端因ACK丢失而重发的FIN，并隔离旧连接报文。"
+      },
+      {
+        "question": "服务端TIME_WAIT过多怎么处理？",
+        "answer": "先确认谁主动关闭及连接是否可复用，再检查keep-alive、连接池和端口范围；调整内核参数前要评估协议与安全影响。"
+      }
+    ],
+    "pitfalls": [
+      "把TIME_WAIT当异常连接直接强制清除，可能引发旧包串入或关闭不完整。"
+    ],
+    "tags": [
+      "TCP",
+      "四次挥手",
+      "TIME_WAIT"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按标准TCP关闭语义回答，具体等待时间和内核策略依系统而异。"
+  },
+  {
+    "sourceId": "src-0685",
+    "shortAnswer": "证书文件可以被复制甚至伪造内容，但攻击者无法在没有受信CA私钥时生成可通过客户端验证的有效签名链。",
+    "fullAnswer": "TLS客户端不会只看证书里写了谁，而会验证证书签名链是否通向本地信任根、域名是否匹配、有效期和用途是否合规，并结合撤销或透明度机制。自签名证书人人可生成，但默认不会被信任。真正风险包括CA或私钥泄露、错误签发、用户安装恶意根证书、客户端关闭校验，以及服务器私钥被盗。防护应保护私钥、自动轮换、启用严格主机名验证，客户端不要信任所有证书；高风险环境可配合证书透明度监控或公钥固定策略。",
+    "followUps": [
+      {
+        "question": "抓包工具为什么能解密本机HTTPS？",
+        "answer": "用户主动安装了抓包工具的根证书后，工具可为目标域动态签发证书并做中间人代理，本机因信任该根而接受。"
+      },
+      {
+        "question": "复制服务器证书能冒充服务器吗？",
+        "answer": "通常不能，TLS握手还要求证明持有对应私钥；只有公钥证书而无私钥无法完成签名认证。"
+      }
+    ],
+    "pitfalls": [
+      "为了调试在生产客户端永久关闭证书或主机名校验。"
+    ],
+    "tags": [
+      "TLS",
+      "数字证书",
+      "网络安全"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按公开CA信任模型回答，不讨论已被控制的客户端信任库之外的绝对安全。"
+  },
+  {
+    "sourceId": "src-0686",
+    "shortAnswer": "HTTPS通过TLS提供服务器身份认证、传输加密和完整性保护，但不能自动保证终端、业务逻辑或服务端数据安全。",
+    "fullAnswer": "连接建立时，客户端验证证书和域名，双方协商协议与密码套件，并通过密钥交换得到会话密钥；后续HTTP数据使用对称加密和认证机制传输，从而抵抗被动窃听和多数中间人篡改。安全依赖正确证书校验、现代TLS版本、可靠随机数和私钥保护。HTTPS仍会暴露部分连接元数据，也阻止不了XSS、SQL注入、恶意服务器和终端木马。部署时应禁用旧协议与弱算法，开启HSTS，保护Cookie，并持续扫描证书和配置。",
+    "followUps": [
+      {
+        "question": "HTTPS能隐藏访问的域名吗？",
+        "answer": "不一定。IP地址可见，传统TLS中的SNI也可能暴露域名；ECH可改善这一点，但部署和客户端支持并不普遍。"
+      },
+      {
+        "question": "前向保密有什么作用？",
+        "answer": "使用临时密钥交换时，即使服务器长期私钥日后泄露，过去捕获的会话流量通常也不能被解密。"
+      }
+    ],
+    "pitfalls": [
+      "认为有HTTPS就无需输入校验、鉴权或敏感数据保护。"
+    ],
+    "tags": [
+      "HTTPS",
+      "TLS",
+      "网络安全"
+    ],
+    "difficulty": "中等",
+    "contextNote": "TLS特性随协议版本和部署配置不同，具体以实际握手为准。"
+  },
+  {
+    "sourceId": "src-0687",
+    "shortAnswer": "IO多路复用让一个线程通过select、poll、epoll或kqueue等机制等待多个描述符就绪，再处理就绪事件。",
+    "fullAnswer": "它解决的是“等待很多IO”的扩展性，而不是让单个系统调用同时执行多段业务。select受描述符集合与扫描开销限制；poll去掉固定集合上限但仍需线性扫描；Linux epoll维护内核兴趣集合并返回就绪事件，适合大量连接中少量活跃的场景。就绪后读写仍可能短读、短写，非阻塞程序必须处理EAGAIN。边沿触发要持续读取到无数据，否则可能丢失后续通知；耗时业务应转交工作线程，避免阻塞事件循环。",
+    "followUps": [
+      {
+        "question": "水平触发和边沿触发有何区别？",
+        "answer": "水平触发只要仍就绪就会持续通知；边沿触发主要在状态变化时通知，事件更少但必须一次尽量处理干净。"
+      },
+      {
+        "question": "IO多路复用是否等于异步IO？",
+        "answer": "不等于。它通常通知描述符已就绪，应用仍执行读写；真正异步IO由内核完成操作后通知结果。"
+      }
+    ],
+    "pitfalls": [
+      "在事件循环里执行慢查询或CPU重任务，拖慢所有连接。"
+    ],
+    "tags": [
+      "操作系统",
+      "IO多路复用",
+      "epoll"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体API按Unix/Linux常见实现说明。"
+  },
+  {
+    "sourceId": "src-0688",
+    "shortAnswer": "联合索引遵循最左前缀：查询条件能从索引第一列开始连续匹配时，B+树排序才最容易被有效利用。",
+    "fullAnswer": "若索引为(a,b,c)，它按a、b、c字典序排序，因此只查b无法直接确定连续范围；a等值后可继续利用b，再继续c。范围条件后的列通常不能继续缩小同一索引扫描范围，但可能参与索引条件下推或覆盖查询，所以不能简单说“完全失效”。MySQL 8.0的跳跃扫描等优化在特定数据分布下可能利用缺失首列的索引。应以EXPLAIN、实际行数和基准验证，而不是只靠口诀，索引设计还要兼顾选择性、排序和写放大。",
+    "followUps": [
+      {
+        "question": "索引(a,b)能否支持ORDER BY b？",
+        "answer": "若a被等值限定，b在该范围内有序，常可利用；若a未限定，不同a分组的b并非全局有序。"
+      },
+      {
+        "question": "条件顺序写成b=? AND a=?会影响吗？",
+        "answer": "通常优化器会重排等值条件，SQL书写顺序不决定是否匹配；决定因素是索引列顺序和谓词语义。"
+      }
+    ],
+    "pitfalls": [
+      "把最左前缀理解为WHERE条件必须按索引列顺序书写。"
+    ],
+    "tags": [
+      "MySQL",
+      "联合索引",
+      "最左前缀"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体优化能力随MySQL版本变化，跳跃扫描需以执行计划确认。"
+  },
+  {
+    "sourceId": "src-0689",
+    "shortAnswer": "索引失效常见于缺少最左列、列上不可改写的函数或计算、隐式类型转换、前导模糊匹配，以及选择性过低导致优化器放弃索引。",
+    "fullAnswer": "“失效”可能是无法定位索引范围，也可能是优化器估算后认为全表扫描更便宜。联合索引不满足最左前缀、对索引列做函数、字符列与数字比较引发隐式转换、LIKE以通配符开头、否定或大范围条件，都可能扩大扫描。OR并非必然失效，优化器可能做index merge；范围后的列也可能用于过滤。排查应看EXPLAIN ANALYZE、估算与实际行数、索引条件和回表次数，并检查统计信息，而非通过强制索引掩盖根因。",
+    "followUps": [
+      {
+        "question": "对日期列使用DATE(create_time)=?如何优化？",
+        "answer": "改写为原列的半开区间，如create_time>=当天起点且<次日起点，使B+树可做范围定位。"
+      },
+      {
+        "question": "有索引为什么优化器仍全表扫描？",
+        "answer": "命中行比例高、回表随机IO昂贵、表很小或统计信息不准时，全表扫描可能成本更低。"
+      }
+    ],
+    "pitfalls": [
+      "见到type=ALL就立即FORCE INDEX，忽略数据分布和成本。"
+    ],
+    "tags": [
+      "MySQL",
+      "索引优化",
+      "执行计划"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按MySQL成本优化器回答，具体计划依版本、统计信息与数据分布。"
+  },
+  {
+    "sourceId": "src-0690",
+    "shortAnswer": "JMM允许线程把共享变量的值保存在工作内存中，以抽象寄存器、缓存和编译优化；一致性由happens-before规则而非每次直读主内存保证。",
+    "fullAnswer": "主内存和工作内存是Java内存模型的抽象，不等同于某块物理RAM和CPU缓存。线程对普通变量的读写可被缓存、重排，若没有同步，另一个线程可能看不到最新值或看到不一致顺序。volatile读写、锁释放与获取、线程启动与终止等建立happens-before，使之前写入对之后读取可见并约束重排。让所有访问直接绕过缓存会严重损害性能，且仍不足以描述编译器优化。正确做法是用同步原语发布共享状态，而不是依赖时间或经验。",
+    "followUps": [
+      {
+        "question": "volatile能保证i++原子吗？",
+        "answer": "不能。volatile保证相关读写可见性和顺序，但i++包含读、计算、写，多线程仍会丢更新。"
+      },
+      {
+        "question": "工作内存就是CPU一级缓存吗？",
+        "answer": "不是，它是JMM规范抽象，可由寄存器、各级缓存和编译器优化共同实现。"
+      }
+    ],
+    "pitfalls": [
+      "把主内存与JVM堆、工作内存与线程栈机械画等号。"
+    ],
+    "tags": [
+      "Java并发",
+      "JMM",
+      "可见性"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "原题按Java内存模型回答，不与JVM运行时数据区混淆。"
+  },
+  {
+    "sourceId": "src-0691",
+    "shortAnswer": "JVM运行时内存包括线程共享的堆和方法区，以及线程私有的程序计数器、虚拟机栈和本地方法栈；还需关注直接内存。",
+    "fullAnswer": "堆承载多数对象并由GC管理；方法区是规范概念，现代HotSpot通常用Metaspace保存类元数据；虚拟机栈中的栈帧包含局部变量、操作数栈和返回信息，深递归可导致栈溢出；程序计数器记录当前字节码位置；本地方法栈服务本地代码。NIO直接缓冲区等使用堆外内存，虽不在规范运行时数据区内，也会造成进程内存压力。分析故障时要把对象泄漏、类加载器泄漏、线程过多和直接内存增长分别观测，不能只盯堆使用率。",
+    "followUps": [
+      {
+        "question": "堆内存正常为何进程仍可能OOM？",
+        "answer": "元空间、直接内存、线程栈或本地库都消耗本地地址空间，任一区域耗尽都可能失败。"
+      },
+      {
+        "question": "栈上保存的是对象本体吗？",
+        "answer": "通常栈帧保存局部变量和对象引用，对象多在堆；但JIT优化后实际分配可能被消除，不能把示意图当物理保证。"
+      }
+    ],
+    "pitfalls": [
+      "监控只配置堆告警，遗漏元空间、线程数和本地内存。"
+    ],
+    "tags": [
+      "JVM",
+      "内存结构",
+      "故障诊断"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按现代HotSpot常见实现补充规范概念。"
+  },
+  {
+    "sourceId": "src-0692",
+    "shortAnswer": "MySQL生态成熟、上手和托管选择广；PostgreSQL标准兼容和复杂查询、扩展类型能力突出，选型应由数据模型和运维约束决定。",
+    "fullAnswer": "二者都是成熟关系数据库，不能用“谁更快”一概而论。MySQL常见于互联网OLTP，复制与周边工具普及；PostgreSQL在复杂SQL、窗口与分析能力、丰富索引、JSONB、扩展和严格语义方面有优势。它们在MVCC、锁、隔离级别、DDL、复制和执行器实现上不同，且版本演进很快。选型要用真实查询、写入比例、事务一致性、故障切换、团队经验和云服务支持做基准测试，并设计迁移与备份恢复演练。",
+    "followUps": [
+      {
+        "question": "从MySQL迁移PostgreSQL最容易忽略什么？",
+        "answer": "SQL方言、大小写与标识符、时间类型、自增方式、字符排序、隔离语义和驱动参数都需逐项验证。"
+      },
+      {
+        "question": "JSON数据多就一定选PostgreSQL吗？",
+        "answer": "不一定。要看查询路径、索引需求和关系约束；若只是存取文档，两者都可用，需真实压测和运维评估。"
+      }
+    ],
+    "pitfalls": [
+      "只用宣传特性下结论，不验证实际版本、插件和托管限制。"
+    ],
+    "tags": [
+      "数据库",
+      "MySQL",
+      "PostgreSQL"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按通用选型比较回答，具体能力以部署版本为准。"
+  },
+  {
+    "sourceId": "src-0693",
+    "shortAnswer": "MySQL InnoDB索引主要使用B+树：非叶节点存键和指针，叶节点有序连接，适合范围查询并减少磁盘层级。",
+    "fullAnswer": "InnoDB聚簇索引的叶子保存完整行，二级索引叶子保存索引列和主键，因此二级索引查询其他列通常要回表。B+树扇出高，可用较少页访问定位数据；叶节点按序连接，范围扫描和排序友好。自适应哈希等属于运行时优化，不能把MySQL索引都称为哈希。设计主键应尽量短且稳定，因为它会出现在各二级索引叶子中；联合索引需结合最左前缀、覆盖率和写放大评估。",
+    "followUps": [
+      {
+        "question": "为什么不用普通二叉搜索树？",
+        "answer": "二叉树扇出低，海量数据时树高大，磁盘或页缓存访问次数多；B+树一个页可容纳大量键。"
+      },
+      {
+        "question": "二级索引一定回表吗？",
+        "answer": "不一定。若查询所需列都在二级索引叶子中即可覆盖扫描，无需再访问聚簇索引。"
+      }
+    ],
+    "pitfalls": [
+      "使用很长且随机的主键，忽略页分裂和二级索引膨胀。"
+    ],
+    "tags": [
+      "MySQL",
+      "InnoDB",
+      "B+树"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按InnoDB常见索引组织回答。"
+  },
+  {
+    "sourceId": "src-0694",
+    "shortAnswer": "volatile保证单次读写的可见性与有序性，synchronized还提供互斥与临界区复合操作的原子性。",
+    "fullAnswer": "写volatile变量会把此前写入按happens-before规则发布给后续读取该变量的线程，并限制相关重排，但它不把read-modify-write组合变成原子操作。synchronized进入和退出监视器，确保同一锁下只有一个线程执行临界区，同时建立锁释放到后续获取的可见性。状态标志或独立配置引用可用volatile；计数递增、多变量不变量通常用锁或原子类。锁竞争成本在现代JVM中会被优化，选择应先满足语义，再测性能。",
+    "followUps": [
+      {
+        "question": "单例双重检查为什么实例字段要volatile？",
+        "answer": "它防止对象引用发布与构造初始化发生危险重排，并让其他线程看到完整初始化结果。"
+      },
+      {
+        "question": "synchronized能保证未持同一锁的读者可见吗？",
+        "answer": "不能形成可靠约束；所有相关访问都应遵守同一同步协议，或使用volatile等建立happens-before。"
+      }
+    ],
+    "pitfalls": [
+      "用volatile修饰计数器后直接count++，误以为不会丢更新。"
+    ],
+    "tags": [
+      "Java并发",
+      "volatile",
+      "synchronized"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按JMM和现代JVM同步语义回答。"
+  },
+  {
+    "sourceId": "src-0695",
+    "shortAnswer": "使用线程池是为了复用线程、限制并发资源、平滑突发流量，并统一实现排队、拒绝、监控和优雅关闭。",
+    "fullAnswer": "直接为每个任务创建线程会把流量峰值放大成线程峰值，带来栈内存、调度和上下文切换成本。线程池用固定资源边界接收任务，让系统在可控吞吐下运行，并通过队列与拒绝策略显式处理过载。它也便于给线程命名、传播上下文、记录异常和统计等待时间。不同下游和优先级应隔离线程池，避免一个慢依赖拖垮全部任务。池大小、队列和超时必须结合CPU、阻塞比例及下游容量压测。",
+    "followUps": [
+      {
+        "question": "线程池能自动提升所有任务性能吗？",
+        "answer": "不能。任务太短、强依赖串行状态或CPU已饱和时，调度开销可能抵消收益，错误配置还会增加延迟。"
+      },
+      {
+        "question": "为什么要按业务隔离线程池？",
+        "answer": "共享池中某类慢任务可能占满线程和队列，隔离可限制故障半径并分别设置容量、超时和降级。"
+      }
+    ],
+    "pitfalls": [
+      "把线程池当无限缓冲器，队列满时没有可观测的降级策略。"
+    ],
+    "tags": [
+      "Java并发",
+      "线程池",
+      "资源治理"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按服务端Java应用回答。"
+  },
+  {
+    "sourceId": "src-0696",
+    "shortAnswer": "限流是在单位时间或并发维度限制请求进入，以保护系统和下游；常用固定窗口、滑动窗口、漏桶、令牌桶和并发信号量。",
+    "fullAnswer": "固定窗口简单但边界可能瞬时翻倍；滑动窗口更平滑但状态成本更高；漏桶以稳定速率排出，适合整形；令牌桶按速率补充并允许一定突发；并发限制直接约束在途请求。分布式实现可在网关或Redis用原子脚本维护，但要考虑时钟、热点键和网络故障。限流拒绝应返回明确状态和Retry-After，配合排队上限、熔断、降级与客户端退避。阈值需由容量压测和SLO确定，并按租户、接口和成本维度防止不公平与绕过。",
+    "followUps": [
+      {
+        "question": "令牌桶和漏桶的主要区别是什么？",
+        "answer": "令牌桶允许积累令牌后短时突发；漏桶强调按近似固定速率流出，更适合严格整形。"
+      },
+      {
+        "question": "限流组件故障时应fail-open还是fail-closed？",
+        "answer": "取决于风险：普通流量保护可在降级阈值内放行，高成本或安全接口宜关闭；应预先定义并监控该策略。"
+      }
+    ],
+    "pitfalls": [
+      "只返回通用500，导致客户端立即重试并进一步放大流量。"
+    ],
+    "tags": [
+      "系统设计",
+      "限流",
+      "高可用"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按分布式服务流量治理语境回答。"
+  },
+  {
+    "sourceId": "src-0697",
+    "shortAnswer": "Java线程池主要包括ThreadPoolExecutor、ScheduledThreadPoolExecutor和ForkJoinPool；应按任务模型显式配置而非只背Executors工厂。",
+    "fullAnswer": "ThreadPoolExecutor适合独立任务，可配置核心/最大线程、队列和拒绝策略；ScheduledThreadPoolExecutor处理延迟和周期任务，但长任务会影响调度；ForkJoinPool使用工作窃取，适合可递归拆分的CPU任务，阻塞操作需谨慎。CompletableFuture默认可能使用公共ForkJoinPool，业务中要评估隔离。Executors的某些便捷工厂使用无界队列或可大量创建线程，容易隐藏容量风险。生产配置应包含有界队列、命名线程工厂、异常观测、超时和优雅关闭。",
+    "followUps": [
+      {
+        "question": "定时线程池任务抛异常会怎样？",
+        "answer": "周期任务若异常未处理，后续执行通常会被抑制，因此任务内部要记录和决定恢复策略。"
+      },
+      {
+        "question": "ForkJoinPool适合数据库调用吗？",
+        "answer": "默认不适合大量阻塞IO，它可能耗尽工作线程；应使用隔离的IO执行器或显式补偿机制并压测。"
+      }
+    ],
+    "pitfalls": [
+      "把所有异步任务都提交到公共线程池，形成跨业务相互干扰。"
+    ],
+    "tags": [
+      "Java并发",
+      "线程池类型",
+      "ForkJoinPool"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体默认执行器和API能力随JDK版本变化。"
+  },
+  {
+    "sourceId": "src-0698",
+    "shortAnswer": "HTTP定义应用层请求响应语义；HTTPS是HTTP经TLS保护的形式，增加身份认证、加密和完整性，通常还带来证书运维。",
+    "fullAnswer": "HTTP明文传输时，中间人可读取或篡改内容；HTTPS先建立TLS会话，验证服务器证书并协商密钥，再传输HTTP数据。现代TLS握手和会话恢复已显著降低开销，HTTP/2常部署于TLS之上，HTTP/3则基于QUIC。端口80和443只是惯例，不是本质区别。HTTPS保护传输链路但不修复应用漏洞，因此仍需鉴权、输入校验、CSP和安全Cookie。迁移时应全站重定向、启用HSTS、消除混合内容并自动续期证书。",
+    "followUps": [
+      {
+        "question": "HTTPS是否绝对无法被抓包？",
+        "answer": "若客户端安装并信任代理根证书，或终端被控制，代理可解密；HTTPS的信任边界包含客户端信任库。"
+      },
+      {
+        "question": "TLS握手会让每次请求都很慢吗？",
+        "answer": "不一定。长连接、会话恢复和TLS 1.3可摊薄或减少握手成本，实际应看网络往返与连接复用。"
+      }
+    ],
+    "pitfalls": [
+      "只给登录接口上HTTPS，其余页面仍可被劫持并窃取会话。"
+    ],
+    "tags": [
+      "HTTP",
+      "HTTPS",
+      "TLS"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按现代Web协议部署回答，协议细节依HTTP/TLS版本变化。"
+  },
+  {
+    "sourceId": "src-0699",
+    "shortAnswer": "ConcurrentHashMap通过无锁读、CAS和桶级同步等机制支持并发访问，避免像Hashtable那样用一把全局锁串行所有操作。",
+    "fullAnswer": "以JDK 8常见实现为例，数组槽位初始化和部分更新使用CAS，桶冲突更新在桶头上同步，树化桶使用专门节点协调；扩容时多个线程可协助迁移。其读取通常不加锁，依靠volatile等可见性保证看到有效结构。单个put、putIfAbsent、compute等有定义的原子语义，但跨多个键的业务不变量仍需外部协调；迭代是弱一致的。它不允许null键和值，以避免并发查询时对“无映射”和“值为null”的歧义。",
+    "followUps": [
+      {
+        "question": "size在高并发下是否代表绝对瞬时值？",
+        "answer": "统计方法会汇总并发计数，返回调用期间的某个状态，不应依赖它实现跨操作的严格业务判定。"
+      },
+      {
+        "question": "compute回调里可以做慢IO吗？",
+        "answer": "不建议。回调可能在内部协调范围内执行，耗时或递归修改会放大争用甚至触发异常，应保持短小无副作用。"
+      }
+    ],
+    "pitfalls": [
+      "把ConcurrentHashMap的线程安全扩展为任意多键事务安全。"
+    ],
+    "tags": [
+      "Java集合",
+      "ConcurrentHashMap",
+      "并发"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "实现细节按JDK 8常见版本说明，其他版本可能调整。"
+  },
+  {
+    "sourceId": "src-0700",
+    "shortAnswer": "ConcurrentHashMap是面向高并发的Map，提供线程安全的单键操作、弱一致遍历和原子复合API，但不支持null。",
+    "fullAnswer": "它适合多个线程频繁读写键值映射。相比同步包装Map，它减少全局锁争用；相比普通HashMap，它对结构变化和内存可见性建立了并发协议。常用putIfAbsent、computeIfAbsent、merge可以避免先检查再更新的竞态，但映射函数应快速、无阻塞且避免递归修改同一映射。遍历期间可以继续更新，不会抛典型的快速失败异常，但结果可能同时包含新旧状态。若需要跨多个键的一致快照、事务或严格顺序，应在更高层加锁或选择专用数据结构。",
+    "followUps": [
+      {
+        "question": "computeIfAbsent适合缓存加载吗？",
+        "answer": "适合原子地建立单键值，但加载函数若很慢会造成热点等待；还要处理异常、过期、穿透和失败重试。"
+      },
+      {
+        "question": "它和Collections.synchronizedMap差别是什么？",
+        "answer": "后者通常以单个互斥锁包住操作，并发度低且遍历需手动同步；ConcurrentHashMap为并发访问设计并提供弱一致遍历。"
+      }
+    ],
+    "pitfalls": [
+      "在映射函数中再次修改相关键，导致递归更新、长时间阻塞或难以推理。"
+    ],
+    "tags": [
+      "Java集合",
+      "ConcurrentHashMap",
+      "缓存"
+    ],
+    "difficulty": "中等",
+    "contextNote": "行为按现代JDK公共契约回答，内部实现不应作为稳定API依赖。"
+  }
+]
+

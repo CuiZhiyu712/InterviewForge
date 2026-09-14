@@ -1,33 +1,32 @@
 import { existsSync, renameSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 
-const sourceFile = new URL("../data/source-index.json", import.meta.url);
-const databaseFile = new URL("../data/interview_bank.sqlite", import.meta.url);
-const databasePath = fileURLToPath(databaseFile);
-const temporaryPath = `${databasePath}.tmp`;
+const defaultSourcePath = fileURLToPath(new URL("../data/source-index.json", import.meta.url));
+const defaultDatabasePath = fileURLToPath(new URL("../data/interview_bank.sqlite", import.meta.url));
 
-function normalizeQuestion(title) {
-  const normalizedTitle = title.replace(/\s+/g, " ").trim();
-  if (!normalizedTitle) {
+export function normalizeQuestion(title) {
+  const withoutDirectoryNumber = title
+    .replace(/^\s*(?:(?:\d+\s*[.．]\s*)+\d*|\d+\s+)/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!withoutDirectoryNumber) {
     throw new Error("source title must not be empty");
   }
 
-  if (/[?？。！!]$/.test(normalizedTitle)) {
-    return normalizedTitle;
+  const hadQuestionMark = /[?？]+\s*$/.test(withoutDirectoryNumber);
+  const text = withoutDirectoryNumber.replace(/[?？。.!！,，;；:：]+\s*$/, "").trim();
+  const questionLanguage = /(?:什么|为什么|怎么|如何|哪些|是否|能否|有哪|多少|吗|呢)/;
+  if (hadQuestionMark || questionLanguage.test(text)) {
+    return `${text}？`;
   }
 
-  const questionLanguage = /(?:什么|为什么|怎么|如何|哪些|区别|是否|能否|有哪|多少|原理|流程|机制|作用|优缺点|场景|底层|实现|失效|一致性|线程安全|复杂度|生命周期|隔离级别|数据结构)/;
-  if (questionLanguage.test(normalizedTitle)) {
-    return `${normalizedTitle}？`;
-  }
-
-  const topic = normalizedTitle
-    .replace(/^\d+(?:\.\d+)*\s*/, "")
+  const topic = text
     .replace(/(?:详解|总结|常见面试题|面试题)$/, "")
     .trim();
-  return `请介绍一下${topic || normalizedTitle}。`;
+  return `请介绍一下${topic || text}。`;
 }
 
 function validateSources(sources) {
@@ -50,19 +49,82 @@ function validateSources(sources) {
   }
 }
 
-const sources = JSON.parse(await readFile(sourceFile, "utf8"));
-validateSources(sources);
+export function replaceDatabase(temporaryPath, databasePath, operations = {}) {
+  const rename = operations.rename ?? renameSync;
+  const remove = operations.remove ?? rmSync;
+  const exists = operations.exists ?? existsSync;
+  const backupPath = `${databasePath}.bak`;
 
-if (existsSync(temporaryPath)) {
-  rmSync(temporaryPath);
+  if (exists(backupPath)) {
+    if (exists(databasePath)) {
+      remove(backupPath);
+    } else {
+      rename(backupPath, databasePath);
+    }
+  }
+
+  const hasExistingDatabase = exists(databasePath);
+  if (hasExistingDatabase) {
+    rename(databasePath, backupPath);
+  }
+
+  try {
+    rename(temporaryPath, databasePath);
+  } catch (replacementError) {
+    if (hasExistingDatabase) {
+      try {
+        if (exists(databasePath)) {
+          remove(databasePath);
+        }
+        rename(backupPath, databasePath);
+      } catch (recoveryError) {
+        throw new AggregateError(
+          [replacementError, recoveryError],
+          `database replacement and recovery failed; preserved backup at ${backupPath}`,
+        );
+      }
+    }
+    throw replacementError;
+  }
+
+  if (hasExistingDatabase && exists(backupPath)) {
+    remove(backupPath);
+  }
 }
 
-const database = new DatabaseSync(temporaryPath);
-try {
-  database.exec("PRAGMA foreign_keys = ON");
-  database.exec("BEGIN IMMEDIATE");
+function parseArguments(arguments_) {
+  const options = { sourcePath: defaultSourcePath, databasePath: defaultDatabasePath };
+  for (let index = 0; index < arguments_.length; index += 1) {
+    const argument = arguments_[index];
+    if (argument !== "--source" && argument !== "--output") {
+      throw new Error(`unknown argument: ${argument}`);
+    }
+    const value = arguments_[index + 1];
+    if (!value || value.startsWith("--")) {
+      throw new Error(`missing value for ${argument}`);
+    }
+    if (argument === "--source") options.sourcePath = resolve(value);
+    if (argument === "--output") options.databasePath = resolve(value);
+    index += 1;
+  }
+  return options;
+}
+
+async function createDatabase(sourcePath, databasePath) {
+  const temporaryPath = `${databasePath}.tmp`;
+  const sources = JSON.parse(await readFile(sourcePath, "utf8"));
+  validateSources(sources);
+
+  if (existsSync(temporaryPath)) {
+    rmSync(temporaryPath);
+  }
+
+  const database = new DatabaseSync(temporaryPath);
   try {
-    database.exec(`
+    database.exec("PRAGMA foreign_keys = ON");
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database.exec(`
       CREATE TABLE questions (
         id INTEGER PRIMARY KEY,
         source_id TEXT NOT NULL UNIQUE,
@@ -125,47 +187,51 @@ try {
       CREATE INDEX follow_ups_question_idx ON follow_ups(question_id);
       CREATE INDEX tags_tag_idx ON tags(tag);
       CREATE INDEX answer_reviews_status_idx ON answer_reviews(status);
-    `);
+      `);
 
-    const insertQuestion = database.prepare(`
+      const insertQuestion = database.prepare(`
       INSERT INTO questions (
         source_id, question, original_title, module, submodule,
         source_site, source_url
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+      `);
 
-    for (const source of sources) {
-      insertQuestion.run(
-        source.id,
-        normalizeQuestion(source.title),
-        source.title,
-        source.module,
-        source.submodule ?? "",
-        source.site,
-        source.url,
-      );
-    }
+      for (const source of sources) {
+        insertQuestion.run(
+          source.id,
+          normalizeQuestion(source.title),
+          source.title,
+          source.module,
+          source.submodule ?? "",
+          source.site,
+          source.url,
+        );
+      }
 
-    const importedCount = database.prepare("SELECT COUNT(*) AS count FROM questions").get().count;
-    if (importedCount !== sources.length) {
-      throw new Error(`imported ${importedCount} of ${sources.length} sources`);
+      const importedCount = database.prepare("SELECT COUNT(*) AS count FROM questions").get().count;
+      if (importedCount !== sources.length) {
+        throw new Error(`imported ${importedCount} of ${sources.length} sources`);
+      }
+      const foreignKeyProblems = database.prepare("PRAGMA foreign_key_check").all();
+      if (foreignKeyProblems.length > 0) {
+        throw new Error(`foreign key check failed: ${JSON.stringify(foreignKeyProblems)}`);
+      }
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
     }
-    const foreignKeyProblems = database.prepare("PRAGMA foreign_key_check").all();
-    if (foreignKeyProblems.length > 0) {
-      throw new Error(`foreign key check failed: ${JSON.stringify(foreignKeyProblems)}`);
-    }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
+  } finally {
+    database.close();
   }
-} finally {
-  database.close();
+
+  replaceDatabase(temporaryPath, databasePath);
+  return sources.length;
 }
 
-if (existsSync(databasePath)) {
-  rmSync(databasePath);
+const isMainModule = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+if (isMainModule) {
+  const { sourcePath, databasePath } = parseArguments(process.argv.slice(2));
+  const sourceCount = await createDatabase(sourcePath, databasePath);
+  console.log(`database created: ${sourceCount} questions at ${databasePath}`);
 }
-renameSync(temporaryPath, databasePath);
-
-console.log(`database created: ${sources.length} questions at ${databasePath}`);

@@ -1,12 +1,19 @@
 const difficulties = new Set(["基础", "中等", "进阶"]);
-const placeholderPattern = /\b(?:TODO|TBD)\b|待补(?:充|全|完善)?|占位|同上|^\s*略\s*$/iu;
+const zeroWidthPattern = /[\u200B-\u200D\u2060\uFEFF]/gu;
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
 function includesPlaceholder(value) {
-  return typeof value === "string" && placeholderPattern.test(value);
+  if (typeof value !== "string") return false;
+  const compact = value
+    .normalize("NFKC")
+    .replace(zeroWidthPattern, "")
+    .trim()
+    .replace(/[\s.,，。!！?？:：;；\-_—()[\]{}"'“”‘’]+/gu, "")
+    .toLowerCase();
+  return /^(?:(?:todo|tbd)(?:后续)?(?:补充|完善)?|待补(?:充)?|待完善|略|同上|占位(?:答案|内容|文本)?|暂无(?:答案|内容)?)$/u.test(compact);
 }
 
 function validateText(errors, field, value, { checkPlaceholder = true } = {}) {
@@ -33,13 +40,13 @@ export function validateAnswerRecord(record, sourceIds) {
   validateText(errors, "shortAnswer", record.shortAnswer);
   validateText(errors, "fullAnswer", record.fullAnswer);
   if (isNonEmptyString(record.fullAnswer)) {
-    const chineseCharacters = record.fullAnswer.match(/\p{Script=Han}/gu)?.length ?? 0;
-    const englishWords = record.fullAnswer
-      .trim()
-      .split(/\s+/u)
-      .filter((word) => /[A-Za-z]/u.test(word)).length;
-    if (chineseCharacters < 80 && englishWords < 45) {
-      errors.push(`fullAnswer is too short: requires 80 Chinese characters or 45 English words; received ${chineseCharacters} Chinese characters and ${englishWords} English words`);
+    const visibleText = record.fullAnswer.normalize("NFKC").replace(zeroWidthPattern, "");
+    const chineseCharacters = visibleText.match(/\p{Script=Han}/gu)?.length ?? 0;
+    const englishWords = (visibleText.match(/[A-Za-z][A-Za-z0-9'’-]*/gu) ?? [])
+      .filter((word) => (word.match(/[A-Za-z]/gu)?.length ?? 0) >= 2).length;
+    const weightedLength = chineseCharacters + (englishWords * 80) / 45;
+    if (weightedLength < 80) {
+      errors.push(`fullAnswer is too short: requires a weighted length of 80 (one Chinese character or 80/45 of a substantive English word); received ${chineseCharacters} Chinese characters and ${englishWords} substantive English words`);
     }
   }
 
@@ -81,5 +88,10 @@ export function validateAnswerRecord(record, sourceIds) {
 }
 
 export function normalizedFullAnswer(fullAnswer) {
-  return fullAnswer.replace(/\s+/gu, " ").trim();
+  return fullAnswer
+    .normalize("NFKC")
+    .replace(zeroWidthPattern, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .replace(/(?<=\p{Script=Han})\s+|\s+(?=\p{Script=Han})/gu, "");
 }

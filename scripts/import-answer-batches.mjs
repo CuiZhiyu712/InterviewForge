@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { basename, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -33,17 +34,57 @@ function loadBatchFiles(batchesPath) {
   }
 
   return fileNames.map((fileName) => {
+    const contents = readFileSync(resolve(batchesPath, fileName), "utf8");
     let records;
     try {
-      records = JSON.parse(readFileSync(resolve(batchesPath, fileName), "utf8"));
+      records = JSON.parse(contents);
     } catch (error) {
       throw new Error(`${fileName}: invalid JSON: ${error.message}`);
     }
     if (!Array.isArray(records)) {
       throw new Error(`${fileName}: batch must be a JSON array`);
     }
-    return { batch: basename(fileName), records };
+    const normalizedName = basename(fileName).normalize("NFKC");
+    const contentHash = createHash("sha256").update(contents, "utf8").digest("hex");
+    return { batch: normalizedName, batchId: `${normalizedName}#${contentHash}`, records };
   });
+}
+
+const requiredSchema = {
+  questions: ["id", "source_id", "difficulty", "context_note"],
+  answers: ["question_id", "short_answer", "full_answer", "pitfalls", "answer_origin", "review_status"],
+  follow_ups: ["question_id", "position", "question", "answer"],
+  tags: ["question_id", "tag"],
+  answer_reviews: ["question_id", "batch", "status", "notes", "reviewed_at"],
+};
+
+function validateDatabaseFile(databasePath) {
+  if (!existsSync(databasePath)) {
+    throw new Error(`database does not exist: ${databasePath}`);
+  }
+  if (!statSync(databasePath).isFile()) {
+    throw new Error(`database must be a regular file: ${databasePath}`);
+  }
+
+  const database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const tableNames = new Set(
+      database.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all().map(({ name }) => name),
+    );
+    const missingTables = Object.keys(requiredSchema).filter((table) => !tableNames.has(table));
+    if (missingTables.length > 0) {
+      throw new Error(`database schema is missing required tables: ${missingTables.join(", ")}`);
+    }
+    for (const [table, requiredColumns] of Object.entries(requiredSchema)) {
+      const columns = new Set(database.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name));
+      const missingColumns = requiredColumns.filter((column) => !columns.has(column));
+      if (missingColumns.length > 0) {
+        throw new Error(`database schema table ${table} is missing required columns: ${missingColumns.join(", ")}`);
+      }
+    }
+  } finally {
+    database.close();
+  }
 }
 
 function validateBatches(batches, sourceIds) {
@@ -85,6 +126,7 @@ function validateBatches(batches, sourceIds) {
 
 export function importAnswerBatches(databasePath, batchesPath) {
   const batches = loadBatchFiles(batchesPath);
+  validateDatabaseFile(databasePath);
   const database = new DatabaseSync(databasePath);
   try {
     database.exec("PRAGMA foreign_keys = ON");
@@ -114,6 +156,7 @@ export function importAnswerBatches(databasePath, batchesPath) {
     );
     const deleteTags = database.prepare("DELETE FROM tags WHERE question_id = ?");
     const insertTag = database.prepare("INSERT INTO tags (question_id, tag) VALUES (?, ?)");
+    const deleteReviews = database.prepare("DELETE FROM answer_reviews WHERE question_id = ?");
     const upsertReview = database.prepare(`
       INSERT INTO answer_reviews (question_id, batch, status, notes, reviewed_at)
       VALUES (?, ?, 'pending', '', NULL)
@@ -123,9 +166,10 @@ export function importAnswerBatches(databasePath, batchesPath) {
 
     database.exec("BEGIN IMMEDIATE");
     try {
-      for (const { batch, records } of batches) {
+      for (const { batchId, records } of batches) {
         for (const record of records) {
           const questionId = questionIds.get(record.sourceId);
+          deleteReviews.run(questionId);
           updateQuestion.run(record.difficulty, record.contextNote ?? "", questionId);
           upsertAnswer.run(questionId, record.shortAnswer.trim(), record.fullAnswer.trim(), JSON.stringify(record.pitfalls));
 
@@ -138,7 +182,7 @@ export function importAnswerBatches(databasePath, batchesPath) {
           for (const tag of record.tags) {
             insertTag.run(questionId, tag.trim());
           }
-          upsertReview.run(questionId, batch);
+          upsertReview.run(questionId, batchId);
         }
       }
       database.exec("COMMIT");

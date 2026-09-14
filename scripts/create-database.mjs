@@ -1,5 +1,6 @@
-import { existsSync, renameSync, rmSync } from "node:fs";
+import { closeSync, existsSync, openSync, renameSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DatabaseSync } from "node:sqlite";
@@ -9,7 +10,7 @@ const defaultDatabasePath = fileURLToPath(new URL("../data/interview_bank.sqlite
 
 export function normalizeQuestion(title) {
   const withoutDirectoryNumber = title
-    .replace(/^\s*(?:(?:\d+\s*[.．]\s*)+\d*|\d+\s+)/, "")
+    .replace(/^\s*(?:\d+(?:\s*[.．]\s*\d+)+|\d+\s*[、)）])\s*/, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!withoutDirectoryNumber) {
@@ -53,15 +54,7 @@ export function replaceDatabase(temporaryPath, databasePath, operations = {}) {
   const rename = operations.rename ?? renameSync;
   const remove = operations.remove ?? rmSync;
   const exists = operations.exists ?? existsSync;
-  const backupPath = `${databasePath}.bak`;
-
-  if (exists(backupPath)) {
-    if (exists(databasePath)) {
-      remove(backupPath);
-    } else {
-      rename(backupPath, databasePath);
-    }
-  }
+  const backupPath = operations.backupPath ?? `${databasePath}.${process.pid}-${randomUUID()}.bak`;
 
   const hasExistingDatabase = exists(databasePath);
   if (hasExistingDatabase) {
@@ -111,20 +104,39 @@ function parseArguments(arguments_) {
 }
 
 async function createDatabase(sourcePath, databasePath) {
-  const temporaryPath = `${databasePath}.tmp`;
-  const sources = JSON.parse(await readFile(sourcePath, "utf8"));
-  validateSources(sources);
-
-  if (existsSync(temporaryPath)) {
-    rmSync(temporaryPath);
+  const absoluteSourcePath = resolve(sourcePath);
+  const absoluteDatabasePath = resolve(databasePath);
+  const comparableSourcePath = process.platform === "win32" ? absoluteSourcePath.toLowerCase() : absoluteSourcePath;
+  const comparableDatabasePath = process.platform === "win32" ? absoluteDatabasePath.toLowerCase() : absoluteDatabasePath;
+  if (comparableSourcePath === comparableDatabasePath) {
+    throw new Error("source and output must not refer to the same path");
   }
 
-  const database = new DatabaseSync(temporaryPath);
+  const lockPath = `${absoluteDatabasePath}.lock`;
+  let lockHandle;
   try {
-    database.exec("PRAGMA foreign_keys = ON");
-    database.exec("BEGIN IMMEDIATE");
+    lockHandle = openSync(lockPath, "wx");
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      throw new Error(`database is locked; lock file exists: ${lockPath}`);
+    }
+    throw error;
+  }
+
+  let temporaryPath;
+  try {
+    const uniqueToken = `${process.pid}-${randomUUID()}`;
+    temporaryPath = `${absoluteDatabasePath}.${uniqueToken}.tmp`;
+    const backupPath = `${absoluteDatabasePath}.${uniqueToken}.bak`;
+    const sources = JSON.parse(await readFile(absoluteSourcePath, "utf8"));
+    validateSources(sources);
+
+    const database = new DatabaseSync(temporaryPath);
     try {
-      database.exec(`
+      database.exec("PRAGMA foreign_keys = ON");
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        database.exec(`
       CREATE TABLE questions (
         id INTEGER PRIMARY KEY,
         source_id TEXT NOT NULL UNIQUE,
@@ -138,7 +150,12 @@ async function createDatabase(sourcePath, databasePath) {
         resume_focus INTEGER NOT NULL DEFAULT 0 CHECK (resume_focus IN (0, 1)),
         priority TEXT CHECK (priority IS NULL OR priority IN ('P0', 'P1', 'P2')),
         resume_reason TEXT NOT NULL DEFAULT '',
-        context_note TEXT NOT NULL DEFAULT ''
+        context_note TEXT NOT NULL DEFAULT '',
+        CHECK (
+          (resume_focus = 0 AND priority IS NULL AND trim(resume_reason) = '')
+          OR
+          (resume_focus = 1 AND priority IN ('P0', 'P1', 'P2') AND length(trim(resume_reason)) > 0)
+        )
       ) STRICT;
 
       CREATE TABLE answers (
@@ -184,49 +201,55 @@ async function createDatabase(sourcePath, databasePath) {
 
       CREATE INDEX questions_module_submodule_idx ON questions(module, submodule);
       CREATE INDEX questions_priority_idx ON questions(priority);
-      CREATE INDEX follow_ups_question_idx ON follow_ups(question_id);
       CREATE INDEX tags_tag_idx ON tags(tag);
       CREATE INDEX answer_reviews_status_idx ON answer_reviews(status);
-      `);
+        `);
 
-      const insertQuestion = database.prepare(`
+        const insertQuestion = database.prepare(`
       INSERT INTO questions (
         source_id, question, original_title, module, submodule,
         source_site, source_url
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-      `);
+        `);
 
-      for (const source of sources) {
-        insertQuestion.run(
-          source.id,
-          normalizeQuestion(source.title),
-          source.title,
-          source.module,
-          source.submodule ?? "",
-          source.site,
-          source.url,
-        );
-      }
+        for (const source of sources) {
+          insertQuestion.run(
+            source.id,
+            normalizeQuestion(source.title),
+            source.title,
+            source.module,
+            source.submodule ?? "",
+            source.site,
+            source.url,
+          );
+        }
 
-      const importedCount = database.prepare("SELECT COUNT(*) AS count FROM questions").get().count;
-      if (importedCount !== sources.length) {
-        throw new Error(`imported ${importedCount} of ${sources.length} sources`);
+        const importedCount = database.prepare("SELECT COUNT(*) AS count FROM questions").get().count;
+        if (importedCount !== sources.length) {
+          throw new Error(`imported ${importedCount} of ${sources.length} sources`);
+        }
+        const foreignKeyProblems = database.prepare("PRAGMA foreign_key_check").all();
+        if (foreignKeyProblems.length > 0) {
+          throw new Error(`foreign key check failed: ${JSON.stringify(foreignKeyProblems)}`);
+        }
+        database.exec("COMMIT");
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
       }
-      const foreignKeyProblems = database.prepare("PRAGMA foreign_key_check").all();
-      if (foreignKeyProblems.length > 0) {
-        throw new Error(`foreign key check failed: ${JSON.stringify(foreignKeyProblems)}`);
-      }
-      database.exec("COMMIT");
-    } catch (error) {
-      database.exec("ROLLBACK");
-      throw error;
+    } finally {
+      database.close();
     }
-  } finally {
-    database.close();
-  }
 
-  replaceDatabase(temporaryPath, databasePath);
-  return sources.length;
+    replaceDatabase(temporaryPath, absoluteDatabasePath, { backupPath });
+    return sources.length;
+  } finally {
+    if (temporaryPath && existsSync(temporaryPath)) {
+      rmSync(temporaryPath);
+    }
+    closeSync(lockHandle);
+    rmSync(lockPath, { force: true });
+  }
 }
 
 const isMainModule = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;

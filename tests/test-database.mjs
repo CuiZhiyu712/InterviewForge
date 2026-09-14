@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFileSync, existsSync, linkSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -109,6 +109,54 @@ try {
   assert.ok(!existsSync(activeTargetPath));
   assert.ok(existsSync(activeBackupPath));
   assert.ok(existsSync(activeLockPath));
+
+  const invalidLockCases = [
+    ["empty", ""],
+    ["partial", '{"pid":'],
+    ["empty-object", "{}"],
+  ];
+  const invalidLockNow = Date.parse("2026-09-14T02:00:00.000Z");
+  for (const [caseName, contents] of invalidLockCases) {
+    const invalidTargetPath = join(replacementDirectory, `invalid-fresh-${caseName}.sqlite`);
+    const invalidLockPath = `${invalidTargetPath}.lock`;
+    const invalidBackupPath = `${invalidTargetPath}.55555-backup.bak`;
+    writeFileSync(invalidLockPath, contents);
+    writeFileSync(invalidBackupPath, "fresh invalid backup");
+    const freshTime = new Date(invalidLockNow - 60 * 1000);
+    utimesSync(invalidLockPath, freshTime, freshTime);
+    assert.equal(
+      recoverStaleDatabaseState(invalidTargetPath, invalidLockPath, { now: () => invalidLockNow }),
+      false,
+      `fresh ${caseName} lock must continue to block`,
+    );
+    assert.ok(existsSync(invalidLockPath));
+    assert.ok(existsSync(invalidBackupPath));
+    assert.ok(!existsSync(invalidTargetPath));
+  }
+
+  for (const [index, [caseName, contents]] of invalidLockCases.entries()) {
+    const invalidTargetPath = join(replacementDirectory, `invalid-stale-${caseName}.sqlite`);
+    const invalidLockPath = `${invalidTargetPath}.lock`;
+    const invalidBackupPath = `${invalidTargetPath}.55556-backup.bak`;
+    writeFileSync(invalidLockPath, contents);
+    writeFileSync(invalidBackupPath, "stale invalid backup");
+    const staleTime = new Date(invalidLockNow - 60 * 60 * 1000);
+    utimesSync(invalidLockPath, staleTime, staleTime);
+    if (index === 0) {
+      writeFileSync(invalidTargetPath, "current database survives invalid lock recovery");
+    }
+    assert.equal(
+      recoverStaleDatabaseState(invalidTargetPath, invalidLockPath, { now: () => invalidLockNow }),
+      true,
+      `stale ${caseName} lock must be recovered using mtime`,
+    );
+    assert.ok(!existsSync(invalidLockPath));
+    assert.ok(!existsSync(invalidBackupPath));
+    assert.equal(
+      readFileSync(invalidTargetPath, "utf8"),
+      index === 0 ? "current database survives invalid lock recovery" : "stale invalid backup",
+    );
+  }
 
   const createResult = spawnSync(
     process.execPath,
@@ -270,6 +318,21 @@ try {
       const generatedSql = generatedSchemaDatabase.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName).sql;
       const committedSql = committedDatabase.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName).sql;
       assert.equal(committedSql, generatedSql, `committed ${tableName} schema must match a fresh build`);
+    }
+    const schemaObjectsSql = `
+      SELECT type, name, sql FROM sqlite_master
+      WHERE type IN ('table', 'index')
+        AND tbl_name IN ('questions', 'answers', 'follow_ups', 'tags', 'answer_reviews')
+        AND name NOT LIKE 'sqlite_%'
+      ORDER BY type, name
+    `;
+    const generatedSchemaObjects = generatedSchemaDatabase.prepare(schemaObjectsSql).all();
+    const committedSchemaObjects = committedDatabase.prepare(schemaObjectsSql).all();
+    assert.equal(committedSchemaObjects.length, generatedSchemaObjects.length, "committed schema object count must match a fresh build");
+    for (let index = 0; index < generatedSchemaObjects.length; index += 1) {
+      assert.equal(committedSchemaObjects[index].type, generatedSchemaObjects[index].type);
+      assert.equal(committedSchemaObjects[index].name, generatedSchemaObjects[index].name);
+      assert.equal(committedSchemaObjects[index].sql, generatedSchemaObjects[index].sql, `${generatedSchemaObjects[index].name} SQL must be current`);
     }
   } finally {
     committedDatabase.close();

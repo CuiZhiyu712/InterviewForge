@@ -59,6 +59,7 @@ export function recoverStaleDatabaseState(databasePath, lockPath, operations = {
   const list = operations.list ?? readdirSync;
   const rename = operations.rename ?? renameSync;
   const remove = operations.remove ?? rmSync;
+  const stat = operations.stat ?? statSync;
   const now = operations.now ?? Date.now;
   const isProcessAlive = operations.isProcessAlive ?? defaultIsProcessAlive;
   const thresholdMs = operations.thresholdMs ?? staleLockThresholdMs;
@@ -71,14 +72,25 @@ export function recoverStaleDatabaseState(databasePath, lockPath, operations = {
   try {
     lock = JSON.parse(read(lockPath, "utf8"));
   } catch {
-    return false;
+    lock = null;
   }
-  const createdAt = Date.parse(lock.createdAt);
-  if (!Number.isInteger(lock.pid) || lock.pid <= 0 || !Number.isFinite(createdAt)) {
-    return false;
-  }
-  if (now() - createdAt < thresholdMs || isProcessAlive(lock.pid)) {
-    return false;
+
+  const createdAt = Date.parse(lock?.createdAt);
+  const hasValidMetadata = Number.isInteger(lock?.pid) && lock.pid > 0 && Number.isFinite(createdAt);
+  if (hasValidMetadata) {
+    if (now() - createdAt < thresholdMs || isProcessAlive(lock.pid)) {
+      return false;
+    }
+  } else {
+    let modifiedAt;
+    try {
+      modifiedAt = stat(lockPath).mtimeMs;
+    } catch {
+      return false;
+    }
+    if (!Number.isFinite(modifiedAt) || now() - modifiedAt < thresholdMs) {
+      return false;
+    }
   }
 
   const directory = dirname(databasePath);

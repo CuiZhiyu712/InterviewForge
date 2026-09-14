@@ -1,0 +1,262 @@
+[
+  {
+    "sourceId": "src-0532",
+    "shortAnswer": "生产中通常直接配置 ThreadPoolExecutor，而不是无界队列的快捷工厂方法。",
+    "fullAnswer": "我会根据任务性质显式创建 ThreadPoolExecutor：计算密集型把线程数控制在 CPU 核数附近，I/O 密集型结合等待比例适当放大，并为队列、最大线程数和拒绝策略设置上限。它通过复用工作线程降低创建成本，队列负责削峰，但队列过大只会把过载变成高延迟和内存风险。实际使用时还要给线程命名，隔离不同业务池，并监控活跃线程、队列深度、完成量和拒绝次数，再用压测校准参数。",
+    "followUps": [
+      { "question": "为什么不建议直接使用 Executors.newFixedThreadPool？", "answer": "它默认使用近似无界的 LinkedBlockingQueue，持续过载时任务会堆积并可能导致内存溢出，也不利于显式表达容量边界。" },
+      { "question": "线程数如何估算？", "answer": "计算密集型可从 CPU 核数附近起步；I/O 密集型可按核数乘以一加等待时间与计算时间之比估算，最终必须用业务压测和监控修正。" }
+    ],
+    "pitfalls": ["不要只报出某个固定线程数；线程池参数必须与任务耗时、下游容量和服务目标一起讨论。"],
+    "tags": ["ThreadPoolExecutor", "容量规划", "过载保护"],
+    "difficulty": "中等",
+    "contextNote": "假设问题询问 Java 后端生产服务的线程池选择，不声称候选人实际使用过某个配置。"
+  },
+  {
+    "sourceId": "src-0533",
+    "shortAnswer": "TCP 三次握手既确认双方收发能力，也同步初始序列号并避免历史连接误建。",
+    "fullAnswer": "客户端先发送 SYN 和自己的初始序列号，服务端回复 SYN、ACK，同时给出服务端序列号，客户端再回 ACK。两次交互只能让一方确认部分链路能力，第三次确认服务端的 SYN 已被客户端收到，双方才都具备可靠发送的依据。握手还协商 MSS、窗口扩大、SACK 等选项，并能通过序列号识别网络中迟到的旧报文。代价是建立连接至少一个往返时延，因此短请求会考虑连接复用，而不是删减握手步骤。",
+    "followUps": [
+      { "question": "两次握手为什么不足？", "answer": "服务端无法确认自己的 SYN 是否到达客户端，旧 SYN 也可能使服务端提前分配状态，造成半开连接或错误连接。" },
+      { "question": "三次握手期间可以携带业务数据吗？", "answer": "普通 TCP 通常在连接建立后发送；TCP Fast Open 可在满足条件时让 SYN 携带数据，但需要双方支持并处理重放风险。" }
+    ],
+    "pitfalls": ["不要只回答“为了可靠”；应说明双向能力确认、序列号同步和旧报文防护。"],
+    "tags": ["TCP", "三次握手", "序列号"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0534",
+    "shortAnswer": "TCP 四次挥手源于两个方向独立关闭，收到 FIN 的一方仍可能有数据要发送。",
+    "fullAnswer": "TCP 是全双工协议，关闭一个方向不等于另一个方向立刻结束。主动关闭方发 FIN 后，被动方先用 ACK 确认，此时应用仍可把剩余数据发完；准备好后被动方再发自己的 FIN，主动方确认，因此逻辑上是四段。若 ACK 与 FIN 恰好可以合并，抓包可能看到三段，但语义仍是两个方向分别关闭。主动方最后进入 TIME_WAIT，等待旧报文消失并保证最后 ACK 丢失时能够重传，这换取了连接终止的可靠性。",
+    "followUps": [
+      { "question": "为什么主动关闭方要进入 TIME_WAIT？", "answer": "它既要允许对端重发 FIN 时再次发送 ACK，也要让同一四元组的旧报文在网络中自然消失。" },
+      { "question": "什么时候可能看到三次挥手？", "answer": "被动方收到 FIN 后立即完成应用层关闭时，可把对前一个 FIN 的 ACK 与自己的 FIN 合并发送。" }
+    ],
+    "pitfalls": ["四次不是绝对报文数量；ACK 与 FIN 可合并，应区分协议语义和抓包表现。"],
+    "tags": ["TCP", "四次挥手", "TIME_WAIT"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0535",
+    "shortAnswer": "ThreadPoolExecutor 按核心线程、队列、最大线程和拒绝策略的顺序接纳任务。",
+    "fullAnswer": "提交任务时，运行线程少于 corePoolSize 就优先创建核心线程；核心线程已满后尝试把任务放入工作队列；队列满且线程数低于 maximumPoolSize 时再创建非核心线程；两者都无容量时执行拒绝策略。工作线程从队列循环取任务，空闲超过 keepAliveTime 的非核心线程会退出，允许核心线程超时后核心线程也可回收。这个顺序体现了以稳定核心并发和队列削峰为主、临时扩容为辅的取舍，配置时必须结合下游承载力。",
+    "followUps": [
+      { "question": "execute 和 submit 有什么差别？", "answer": "execute 接受 Runnable 且异常通常交给线程的未捕获异常处理器；submit 返回 Future，任务异常会封装在 Future.get 的 ExecutionException 中。" },
+      { "question": "有界队列为什么重要？", "answer": "它把等待任务数量限制在可控范围，使过载能够通过扩容或拒绝显性暴露，避免无界堆积拖垮堆内存和响应时间。" }
+    ],
+    "pitfalls": ["不要误说核心线程满后立即扩到最大线程；默认流程是先入队，队列满后才增加非核心线程。"],
+    "tags": ["ThreadPoolExecutor", "任务提交流程", "拒绝策略"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0536",
+    "shortAnswer": "ConcurrentHashMap 用 CAS 完成可无锁竞争的初始化或槽位写入，用 synchronized 串行化桶内结构修改。",
+    "fullAnswer": "以 Java 8 实现为例，表初始化、空桶首次放入、扩容状态推进和计数累加等位置会借助 CAS，竞争不激烈时避免阻塞。若目标桶已有链表或红黑树，put 需要锁住桶头节点，再在 synchronized 临界区中查找、更新或追加，保证同一桶结构不被并发破坏。读取通常依靠 volatile 可见性而不加锁，扩容时线程还能协作迁移。这样的粒度比整表加锁高，但仍不是所有复合操作都天然原子，应使用 compute、merge 等原子 API。",
+    "followUps": [
+      { "question": "为什么桶内修改不能只靠一次 CAS？", "answer": "链表遍历、去重、插入和树化是多步骤结构变更，一次 CAS 无法覆盖完整不变量，锁住桶头更容易保证一致性。" },
+      { "question": "ConcurrentHashMap 的 get 为什么通常不加锁？", "answer": "关键字段通过 volatile 或安全发布保证可见性，读取沿稳定节点引用遍历，不改变桶结构，因此可在弱一致语义下无锁完成。" }
+    ],
+    "pitfalls": ["结论依赖 JDK 版本；Java 7 使用 Segment，不能把 Java 8 的桶级 synchronized 机制套到所有版本。"],
+    "tags": ["ConcurrentHashMap", "CAS", "synchronized"],
+    "difficulty": "进阶",
+    "contextNote": "按 JDK 8 及之后的主流实现回答。"
+  },
+  {
+    "sourceId": "src-0537",
+    "shortAnswer": "HashMap 面向单线程且允许 null，ConcurrentHashMap 提供并发安全并禁止 null 键值。",
+    "fullAnswer": "两者都以哈希表组织数据，Java 8 中高冲突桶都可能树化，但并发语义不同。HashMap 的 put、扩容和遍历没有同步保障，并发修改可能丢更新或读到不一致状态；ConcurrentHashMap 通过 volatile、CAS 和桶级锁协调读写，单次 get、put 以及 compute 等指定复合操作具备相应原子性。ConcurrentHashMap 禁止 null，是为了在并发环境中明确区分“键不存在”和“值为 null”。它的迭代器是弱一致的，换来更高并发度，而不是全局快照。",
+    "followUps": [
+      { "question": "ConcurrentHashMap 的 size 是强一致快照吗？", "answer": "通常不是；并发更新时统计值可能反映某个近似时刻，不能用它参与要求严格一致的业务判断。" },
+      { "question": "把 HashMap 包在 synchronizedMap 中是否等价？", "answer": "功能上可获得基本线程安全，但通常使用单一互斥锁，并发粒度和复合 API 能力不如 ConcurrentHashMap。" }
+    ],
+    "pitfalls": ["线程安全只覆盖容器 API 的约定；先 get 再 put 仍是两个步骤，必须改用原子复合方法或外部同步。"],
+    "tags": ["HashMap", "ConcurrentHashMap", "线程安全"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0538",
+    "shortAnswer": "可用 ss 或 lsof 按端口定位监听套接字及其所属进程。",
+    "fullAnswer": "我通常先执行 ss -lntp 查看 TCP 监听端口，例如 ss -lntp 'sport = :8080'；也可用 lsof -i :8080 获取进程、用户和文件描述符。老系统可能使用 netstat -lntp，但新发行版更推荐 iproute2 中的 ss。看到 PID 后再用 ps -fp PID、readlink /proc/PID/exe 或 systemctl status 核对进程身份。查看其他用户进程往往需要 sudo。排障时还要区分 TCP 与 UDP、监听地址是 127.0.0.1 还是 0.0.0.0，避免仅凭端口号误判服务暴露范围。",
+    "followUps": [
+      { "question": "如何查看 UDP 端口？", "answer": "可使用 ss -lunp 或 lsof -iUDP:端口；UDP 无连接，因此应关注绑定地址和进程信息。" },
+      { "question": "为什么普通用户可能看不到 PID？", "answer": "进程和网络命名空间的权限限制会隐藏其他用户的进程信息，通常需要 sudo 或进入对应容器命名空间查看。" }
+    ],
+    "pitfalls": ["不要看到端口占用就直接 kill -9；应先确认进程归属、服务管理方式和优雅停止路径。"],
+    "tags": ["Linux", "ss", "端口排障"],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0539",
+    "shortAnswer": "volatile 解决可见性与有序性，synchronized 还提供互斥和复合操作原子性。",
+    "fullAnswer": "volatile 读写通过 Java 内存模型的 happens-before 规则发布最新值，并限制相关指令重排，适合状态标志、配置引用等单次读写场景；它不让 i++ 这类读改写成为原子操作。synchronized 进入和退出监视器时也建立可见性，同时同一时刻只允许一个线程进入临界区，因此能保护多个共享变量的不变量。底层上 volatile 会生成带内存屏障语义的访问，synchronized 则由对象监视器及 JVM 锁实现支撑。前者开销小但能力有限，后者语义完整且现代 JVM 已有大量优化。",
+    "followUps": [
+      { "question": "volatile 能保证 long 或引用写入原子吗？", "answer": "单次 volatile 读写具有原子和可见语义，但由多步组成的条件判断、累加或比较更新仍不原子。" },
+      { "question": "双重检查单例为什么需要 volatile？", "answer": "它阻止对象引用发布与构造初始化发生危险重排，并让其他线程看到完成初始化后的引用。" }
+    ],
+    "pitfalls": ["不要把“可见”理解成“线程安全”；是否安全取决于业务不变量是否能由单次 volatile 操作表达。"],
+    "tags": ["volatile", "synchronized", "Java内存模型"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0540",
+    "shortAnswer": "Spring 事务传播行为定义方法加入、创建、挂起或拒绝现有事务的规则。",
+    "fullAnswer": "最常用的是 REQUIRED：有事务就加入，没有就新建；REQUIRES_NEW 总是开启独立事务并挂起外层；NESTED 在支持保存点时建立嵌套回滚边界。SUPPORTS 有则加入、无则非事务执行，NOT_SUPPORTED 会挂起现有事务，MANDATORY 要求调用方必须已有事务，NEVER 则要求不能存在事务。传播行为解决的是调用链事务边界，不是数据库隔离级别。选择时要先确定失败是否应与主流程一起回滚，例如审计记录可能独立提交，但滥用 REQUIRES_NEW 会增加连接占用并改变一致性语义。",
+    "followUps": [
+      { "question": "REQUIRES_NEW 与 NESTED 的主要区别是什么？", "answer": "前者是独立物理事务，内外提交互相独立；后者通常依赖同一物理事务的保存点，外层最终回滚仍会影响嵌套工作。" },
+      { "question": "同类方法自调用时传播行为为何可能不生效？", "answer": "默认代理模式只拦截经过代理对象的外部调用，this 内部调用绕过代理，事务拦截器不会重新建立传播边界。" }
+    ],
+    "pitfalls": ["不要把 NESTED 一概说成独立事务；其语义取决于事务管理器和底层资源是否支持保存点。"],
+    "tags": ["Spring事务", "传播行为", "事务边界"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0541",
+    "shortAnswer": "BIO 是阻塞式调用，NIO 以非阻塞通道和多路复用处理并发，AIO 以完成通知表达异步 I/O。",
+    "fullAnswer": "BIO 中线程发起 read 或 accept 后通常阻塞到数据到达，模型直观但大量连接会消耗线程。Java NIO 提供 Channel、Buffer 和 Selector，一个线程可监听多个通道的就绪事件，适合连接多而单连接活动不频繁的服务，不过业务处理仍需避免阻塞事件循环。AIO 由系统或运行时异步执行操作，完成后回调或通知结果，编程模型更复杂且平台实现差异较大。工程选择不只看名词，还要结合操作系统能力、框架生态、连接规模和延迟目标；Netty 常以 NIO/事件驱动封装复杂性。",
+    "followUps": [
+      { "question": "NIO 的非阻塞是否意味着业务代码绝不阻塞？", "answer": "不是；Selector 只解决 I/O 就绪等待，数据库访问、锁竞争或耗时计算仍可能阻塞事件循环，需要转移到合适线程池。" },
+      { "question": "Buffer 为什么需要 flip？", "answer": "写入后 position 位于末尾，flip 会把 limit 设为当前 position 并把 position 归零，使后续读取只覆盖已写入区域。" }
+    ],
+    "pitfalls": ["不要把 NIO 直接等同于异步 I/O；经典 Selector 模型本质是就绪通知，实际读写仍由应用线程执行。"],
+    "tags": ["BIO", "NIO", "AIO"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0542",
+    "shortAnswer": "CMS 以低停顿并发标记清除为目标，G1 以 Region 和可预测停顿统一管理整个堆。",
+    "fullAnswer": "CMS 主要回收老年代，经历初始标记、并发标记、重新标记和并发清除，减少长时间停顿，但会产生空间碎片，还可能因并发失败退化为串行回收。G1 把堆划分为多个 Region，按存活收益选择回收集合，通过复制整理避免普通碎片，并可设置停顿时间目标；它还能处理巨型对象和跨 Region 引用。取舍上，CMS 机制较老且已从现代 JDK 移除，G1 更适合中大型堆的综合吞吐与停顿控制，但调优仍要基于 GC 日志，而非只换收集器。",
+    "followUps": [
+      { "question": "G1 为什么能够控制停顿目标？", "answer": "它根据历史统计预测各 Region 的回收成本和收益，在停顿预算内选择本次回收集合，但目标是软目标而非绝对保证。" },
+      { "question": "CMS 的浮动垃圾是什么？", "answer": "并发标记期间应用线程仍在运行，新产生或状态变化而未被本轮识别的垃圾只能留到下一轮回收。" }
+    ],
+    "pitfalls": ["不要说 G1 完全无停顿；初始标记、重新标记和对象转移等阶段仍包含 Stop-The-World。"],
+    "tags": ["CMS", "G1", "垃圾收集器"],
+    "difficulty": "进阶",
+    "contextNote": "涉及收集器可用性时以具体 JDK 版本为准。"
+  },
+  {
+    "sourceId": "src-0543",
+    "shortAnswer": "Spring 通常通过 @Transactional 或 TransactionTemplate 在事务管理器上建立事务边界。",
+    "fullAnswer": "声明式方式是在服务层公共方法上标注 @Transactional，Spring 代理在调用前通过 PlatformTransactionManager 开启或加入事务，方法正常返回时提交，匹配回滚规则的异常抛出时回滚。需要精细控制多段提交或显式处理返回值时，可使用 TransactionTemplate。实际落地要选择正确的数据源和事务管理器，设置传播行为、隔离级别、超时及只读属性，并让异常继续越过代理边界。默认代理无法拦截同类自调用，异步线程也不会自动继承线程绑定的事务上下文。",
+    "followUps": [
+      { "question": "默认哪些异常会触发回滚？", "answer": "默认是 RuntimeException 和 Error；受检异常需要通过 rollbackFor 等属性显式配置。" },
+      { "question": "为什么建议把事务放在服务层？", "answer": "服务层通常代表一个完整业务用例，能统一协调多个仓储操作，避免控制器或单条 DAO 方法形成过碎的事务边界。" }
+    ],
+    "pitfalls": ["不要在事务方法中捕获异常后静默返回，否则代理看到正常返回可能提交；应重新抛出或显式标记回滚。"],
+    "tags": ["Spring", "Transactional", "事务管理"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0544",
+    "shortAnswer": "双亲委派要求类加载器先请求父加载器加载，父级无法完成时才由自己尝试。",
+    "fullAnswer": "类加载请求通常从应用类加载器向平台类加载器、再到启动类加载器逐级委派；父级找不到目标类后，子加载器才执行自己的 findClass。这样核心 Java 类优先由受信任的上层加载器定义，避免应用伪造 java.lang.String 等基础类型，也减少同一类被多次定义。类的身份不仅由全限定名决定，还包含定义它的类加载器。该机制并非不可突破，SPI、容器隔离和模块化场景会使用线程上下文加载器或自定义加载顺序，但必须明确隔离与安全边界。",
+    "followUps": [
+      { "question": "为什么 SPI 常使用线程上下文类加载器？", "answer": "启动类加载器加载的接口需要发现应用类路径中的实现，而父加载器无法向下看，线程上下文加载器提供了受控的反向可见性。" },
+      { "question": "同名类为什么可能无法互相强制转换？", "answer": "如果它们由不同的定义类加载器加载，JVM 会把它们视为不同类型，即使字节码和全限定名相同。" }
+    ],
+    "pitfalls": ["双亲委派是常见类加载器实现约定，不是 JVM 规范强制所有自定义加载器必须遵守的唯一算法。"],
+    "tags": ["类加载器", "双亲委派", "类隔离"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0545",
+    "shortAnswer": "Spring 三级缓存通过提前暴露可加工的 Bean 引用，解决部分单例属性注入循环依赖。",
+    "fullAnswer": "一级缓存保存完成初始化的单例，二级缓存保存已提前暴露的早期对象，三级缓存保存能够生成早期引用的 ObjectFactory。创建 A 时实例化后把工厂放入三级缓存，填充属性发现依赖 B；创建 B 又依赖 A 时，Spring 调用该工厂取得 A 的早期引用，必要时让 BeanPostProcessor 生成代理，并移动到二级缓存。B 完成后 A 继续初始化，最终进入一级缓存。三级设计的重要价值是让早期引用与最终代理尽量一致，但它不能通用解决构造器循环、原型 Bean 循环或所有复杂代理场景。",
+    "followUps": [
+      { "question": "为什么只用二级缓存不够理想？", "answer": "若实例化后立即生成并暴露代理，会对没有循环依赖的 Bean 也提前做后处理；三级工厂让早期代理按需产生。" },
+      { "question": "构造器循环依赖为什么难以解决？", "answer": "构造器执行前对象尚未完成实例化，没有可提前暴露的引用，双方都必须先得到对方才能创建。" }
+    ],
+    "pitfalls": ["不要泛化成 Spring 能解决所有循环依赖；范围通常是默认单例、setter 或字段注入，并受版本和配置影响。"],
+    "tags": ["Spring", "循环依赖", "三级缓存"],
+    "difficulty": "进阶",
+    "contextNote": "按经典 Spring 单例容器实现说明，具体版本可能限制循环引用。"
+  },
+  {
+    "sourceId": "src-0546",
+    "shortAnswer": "Spring Boot 常用注解覆盖启动配置、组件注册、Web 映射、数据绑定和事务校验。",
+    "fullAnswer": "入口常用 @SpringBootApplication，它组合了配置类、自动配置和组件扫描。分层组件可用 @Component、@Service、@Repository、@RestController；HTTP 接口用 @RequestMapping 及 Get、Post 等派生注解，参数由 @PathVariable、@RequestParam、@RequestBody 绑定。配置可用 @ConfigurationProperties 做类型安全绑定，依赖注入优先构造器而非到处写 @Autowired。数据校验常配合 @Valid，事务使用 @Transactional。理解注解不能停在背名称，还应说明其元注解、代理或后处理器如何生效，并避免扫描范围过大。",
+    "followUps": [
+      { "question": "@SpringBootApplication 包含哪些核心注解？", "answer": "核心组合是 @SpringBootConfiguration、@EnableAutoConfiguration 和 @ComponentScan。" },
+      { "question": "@ConfigurationProperties 相比 @Value 有什么优势？", "answer": "它适合一组层次化配置，支持类型转换、校验和元数据，重构与测试也比零散字符串表达式更安全。" }
+    ],
+    "pitfalls": ["不要把注解当作魔法；回答时应指出是否依赖组件扫描、AOP 代理、BeanPostProcessor 或 MVC 参数解析器。"],
+    "tags": ["Spring Boot", "注解", "自动配置"],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0547",
+    "shortAnswer": "类加载器收到请求时通常先委派父级，父级无法加载后才由当前加载器定义类。",
+    "fullAnswer": "类加载的委派链让 JDK 核心类由启动或平台加载器优先处理，应用类再由应用加载器处理。这样可以保持基础类型的唯一性和可信来源，并防止类路径中的同名文件覆盖核心实现。真正判断类型相同时，JVM 同时考察类名与定义加载器，所以容器可用不同加载器隔离相同依赖的多个版本。实际框架有例外，例如服务发现需要线程上下文加载器，插件系统可能采用子优先策略。遇到 ClassNotFoundException 或 ClassCastException 时，应把加载器层级和可见性一起排查。",
+    "followUps": [
+      { "question": "loadClass 与 findClass 分工是什么？", "answer": "loadClass 通常实现缓存检查和父级委派流程，父级失败后再调用当前加载器的 findClass 来寻找并定义字节码。" },
+      { "question": "如何观察一个类由谁加载？", "answer": "可查看 clazz.getClassLoader，启动类加载器常显示为 null；也可结合 JVM 类加载日志和容器的加载器层级分析。" }
+    ],
+    "pitfalls": ["不要认为父加载器一定是 Java 对象继承关系中的父对象；这里描述的是加载委派关系。"],
+    "tags": ["JVM", "类加载", "双亲委派"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0548",
+    "shortAnswer": "synchronized 是 JVM 内置监视器锁，ReentrantLock 是显式 API，提供可中断、公平和多条件队列等能力。",
+    "fullAnswer": "两者都支持可重入并能建立互斥与内存可见性。synchronized 由编译器生成 monitorenter、monitorexit 或方法标志，异常退出会自动释放，语法简洁且 JVM 优化成熟。ReentrantLock 基于 AQS，需要在 finally 中 unlock，但可使用 tryLock、lockInterruptibly、公平策略和多个 Condition，适合需要超时获取、响应取消或多个等待集合的场景。一般简单临界区优先 synchronized；只有明确需要高级能力时再选 ReentrantLock。性能不应靠旧版本印象判断，应该根据争用模式和可维护性选择。",
+    "followUps": [
+      { "question": "公平锁一定更好吗？", "answer": "不一定；公平锁减少插队但增加调度和上下文切换，吞吐通常低于非公平锁，只在等待顺序确有业务价值时使用。" },
+      { "question": "ReentrantLock 忘记 unlock 会怎样？", "answer": "锁会一直被当前线程持有或随线程结束留下不可获取状态，其他线程可能永久阻塞，因此必须在成功加锁后的 finally 中释放。" }
+    ],
+    "pitfalls": ["不要笼统说 ReentrantLock 性能更高；现代 JVM 下性能依赖竞争程度，语义需求和正确释放更重要。"],
+    "tags": ["synchronized", "ReentrantLock", "可重入锁"],
+    "difficulty": "中等",
+    "contextNote": "原题标题含一段结论，本答案独立解释两者机制与选择。"
+  },
+  {
+    "sourceId": "src-0549",
+    "shortAnswer": "ThreadPoolExecutor 的七个核心参数共同限定线程创建、排队、存活与过载行为。",
+    "fullAnswer": "corePoolSize 决定稳定工作线程规模，maximumPoolSize 给队列满后的临时扩容设上限；keepAliveTime 与 unit 控制空闲非核心线程回收，workQueue 承接等待任务，threadFactory 负责线程命名、优先级和异常观测，handler 在池与队列都无容量时执行拒绝策略。任务到来依次经历核心线程、入队、扩至最大线程、拒绝。生命周期上 shutdown 停止接收新任务但处理存量，shutdownNow 尝试中断并返回未开始任务。参数必须与下游容量联动，不能只追求不拒绝。",
+    "followUps": [
+      { "question": "allowCoreThreadTimeOut 有什么作用？", "answer": "开启后核心线程空闲超过 keepAliveTime 也可退出，适合流量波动大且允许冷启动成本的池。" },
+      { "question": "线程工厂为什么值得自定义？", "answer": "清晰的线程名、未捕获异常处理器和必要的上下文设置能显著改善日志定位、监控归因和故障隔离。" }
+    ],
+    "pitfalls": ["maximumPoolSize 在无界队列下通常不会发挥扩容作用，因为任务会一直先进入队列。"],
+    "tags": ["ThreadPoolExecutor", "核心参数", "生命周期"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0550",
+    "shortAnswer": "Java 8 的 ConcurrentHashMap 以无锁读取、CAS 和桶级同步实现线程安全与并发。",
+    "fullAnswer": "读操作沿 volatile 可见的 table 和节点字段遍历，通常无需互斥；空桶插入先用 CAS，桶已有元素时只锁定该桶的头节点，再完成链表或红黑树更新，因此不同桶可并行写。计数使用 baseCount 与分散的 CounterCell 降低热点竞争，扩容时多个线程通过 transferIndex 分领区间协作搬迁，并用 ForwardingNode 引导读写访问新表。这个设计避免整表锁，提高高并发吞吐，但迭代与 size 是弱一致观察，跨多个键的业务不变量仍需额外协调。",
+    "followUps": [
+      { "question": "扩容期间 get 会不会完全阻塞？", "answer": "通常不会；遇到 ForwardingNode 时读取会转向新表继续查找，迁移线程之间也按区间协作。" },
+      { "question": "为什么禁止 null 键和值？", "answer": "并发读取返回 null 时必须无歧义地表示键不存在，否则无法安全地区分“尚未读到”与“映射值就是 null”。" }
+    ],
+    "pitfalls": ["单个方法线程安全不等于一串方法组合原子；条件更新应使用 compute、replace 或显式同步。"],
+    "tags": ["ConcurrentHashMap", "并发容器", "扩容"],
+    "difficulty": "进阶",
+    "contextNote": "按 JDK 8 及之后的实现回答。"
+  },
+  {
+    "sourceId": "src-0551",
+    "shortAnswer": "ConcurrentHashMap 用分散计数和重试汇总实现 size，降低全局计数器竞争。",
+    "fullAnswer": "每次更新映射数量时不会都争抢同一个锁。低竞争时线程尝试 CAS 更新 baseCount；竞争出现后，把增量散列到多个 CounterCell 中，机制类似 LongAdder。size 或 mappingCount 读取时汇总 baseCount 与各 Cell 的值，再根据返回类型处理边界。这样写入扩展性更好，但汇总期间其他线程仍可增删，因此结果通常只是弱一致的瞬时估计，不适合作为“先判断 size 再执行”这类严格业务条件。需要强一致数量时，应在更高层建立锁、版本或数据库约束。",
+    "followUps": [
+      { "question": "size 和 mappingCount 有什么区别？", "answer": "size 返回 int 并在超大映射时受上限约束；mappingCount 返回 long，更适合估计大型映射的元素数量。" },
+      { "question": "CounterCell 如何缓解竞争？", "answer": "不同线程按探针值更新不同槽位，把一个热点 CAS 拆成多个较低竞争的计数位置，读取时再求和。" }
+    ],
+    "pitfalls": ["不要宣称 size 在并发更新时提供线性一致快照；它适合统计观察，不适合关键业务判定。"],
+    "tags": ["ConcurrentHashMap", "size", "CounterCell"],
+    "difficulty": "进阶",
+    "contextNote": "按 JDK 8 及之后的实现回答。"
+  }
+]

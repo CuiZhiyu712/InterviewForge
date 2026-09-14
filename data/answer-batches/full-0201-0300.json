@@ -1,0 +1,2409 @@
+[
+  {
+    "sourceId": "src-0201",
+    "shortAnswer": "synchronized 是 JVM 内置监视器锁，Lock 是显式锁接口，控制能力和使用方式不同。",
+    "fullAnswer": "synchronized 由 JVM 自动获取和释放，支持实例、类和代码块，异常退出也会释放；ReentrantLock 需在 finally 中 unlock，却提供可中断、限时、公平锁和多 Condition。两者都具备可见性与互斥，现代 JVM 下性能应实测。简单临界区优先 synchronized，需要高级等待或中断控制再用 Lock。",
+    "followUps": [
+      {
+        "question": "何时必须手动释放锁？",
+        "answer": "使用 Lock 时必须在成功加锁后的 finally 中释放，避免异常造成永久占用。"
+      },
+      {
+        "question": "公平锁为什么吞吐常较低？",
+        "answer": "严格排队减少插队，但增加线程切换并降低竞争下的整体吞吐。"
+      }
+    ],
+    "pitfalls": [
+      "不要笼统声称 synchronized 一定比 Lock 慢。"
+    ],
+    "tags": [
+      "Java并发",
+      "synchronized",
+      "Lock"
+    ],
+    "difficulty": "中等",
+    "contextNote": "题目中的 locked 按 Java Lock/ReentrantLock 理解。"
+  },
+  {
+    "sourceId": "src-0202",
+    "shortAnswer": "准备快手 Java 面试应围绕 Java 基础、并发、JVM、存储、中间件和项目证据建立可追问的知识链。",
+    "fullAnswer": "缺少具体岗位和轮次时，我会先根据 JD 区分业务后端、基础架构或客户端，再复习集合并发、JVM、MySQL、Redis、Kafka、网络与微服务。每个项目准备背景、职责、关键指标、故障与取舍，并现场写常见算法。公司和团队题型会变化，不能背固定题单，应通过模拟追问检验是否能解释原理和边界。",
+    "followUps": [
+      {
+        "question": "项目介绍怎样避免像背稿？",
+        "answer": "围绕具体问题、个人动作、可验证结果和未采用方案的取舍展开。"
+      },
+      {
+        "question": "面试前如何安排优先级？",
+        "answer": "先覆盖 JD 高频技术与自己的项目，再补通用基础和算法薄弱项。"
+      }
+    ],
+    "pitfalls": [
+      "不要把网络面经当作该公司当前固定题库。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体轮次与岗位上下文，按通用 Java 后端面试准备回答。"
+  },
+  {
+    "sourceId": "src-0203",
+    "shortAnswer": "Elasticsearch 常见分词器有 standard、simple、whitespace、keyword，以及中文场景的 IK 等插件。",
+    "fullAnswer": "standard 基于 Unicode 规则适合通用文本；whitespace 只按空白切分；keyword 不切分，适合标识符；中文常用 IK 的 ik_smart 或 ik_max_word，也可用 smartcn、ICU 或自定义词典。索引与查询分析器可不同，但必须通过 _analyze 验证召回。插件版本需匹配 ES，词典更新要评测歧义和召回变化。",
+    "followUps": [
+      {
+        "question": "keyword tokenizer 适合什么字段？",
+        "answer": "订单号、标签和枚举等需要整体精确匹配的字段。"
+      },
+      {
+        "question": "索引分词器改了为何旧数据不生效？",
+        "answer": "已建 token 不会自动重算，通常要建新索引并 reindex 后切别名。"
+      }
+    ],
+    "pitfalls": [
+      "中文分词粒度越细不一定越好，可能扩大噪声。"
+    ],
+    "tags": [
+      "Elasticsearch",
+      "分词器"
+    ],
+    "difficulty": "中等",
+    "contextNote": "插件可用性以部署的 Elasticsearch 版本为准。"
+  },
+  {
+    "sourceId": "src-0204",
+    "shortAnswer": "微服务组件应按注册配置、网关、调用、容错、消息、观测和部署说明，并只陈述项目实际使用部分。",
+    "fullAnswer": "典型 Java 微服务可能包含 Nacos 或 Consul 做注册配置，Spring Cloud Gateway 做入口，OpenFeign 或 gRPC 调用，Sentinel/Resilience4j 做限流熔断，Kafka/RocketMQ 解耦，Prometheus、日志和 Trace 做观测，再由 Docker/Kubernetes 部署。回答要说明每个组件解决的具体问题、失败策略和替代方案，不能堆名词，还要交代组件不可用时系统怎样降级以及怎样验证恢复。",
+    "followUps": [
+      {
+        "question": "注册中心不可用时服务还能调用吗？",
+        "answer": "客户端可使用本地缓存的实例列表短暂运行，但新实例和变更无法及时发现。"
+      },
+      {
+        "question": "网关和服务内鉴权如何分工？",
+        "answer": "网关做统一身份校验，服务仍需基于可信身份执行细粒度授权。"
+      }
+    ],
+    "pitfalls": [
+      "不得把未在项目中落地的组件描述成个人成果。"
+    ],
+    "tags": [
+      "微服务",
+      "Spring Cloud"
+    ],
+    "difficulty": "中等",
+    "contextNote": "未给出具体项目，按常见 Java 微服务架构举例，实际回答需替换为真实经历。"
+  },
+  {
+    "sourceId": "src-0205",
+    "shortAnswer": "Elasticsearch 全文检索先把文本分析成倒排索引，查询时对词项召回并按相关性评分。",
+    "fullAnswer": "写入时 analyzer 经字符过滤、tokenizer 和 token filter 生成词项，倒排表记录词项到文档及位置；查询时 match 等查询同样分析，Boolean 组合候选，BM25 按词频、逆文档频率和长度评分。短语依赖位置，模糊匹配会扩大候选。应合理映射 text 与 keyword，多分片需控制路由，并用 explain/profile 定位相关性与性能。",
+    "followUps": [
+      {
+        "question": "match 与 term 有什么区别？",
+        "answer": "match 会分析查询文本，term 直接匹配倒排中的精确词项。"
+      },
+      {
+        "question": "为什么深分页很慢？",
+        "answer": "各分片需收集并排序大量前置结果，应改用 search_after 或 PIT。"
+      }
+    ],
+    "pitfalls": [
+      "字段映射一旦错误通常需要重建索引，不能靠查询补救。"
+    ],
+    "tags": [
+      "Elasticsearch",
+      "全文检索"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0206",
+    "shortAnswer": "Kafka 不丢消息要分别保障生产者、Broker 和消费者三个链路。",
+    "fullAnswer": "生产者启用幂等与足够重试，设置 acks=all；Broker 使用合理副本数、min.insync.replicas，禁止不安全 leader 选举并监控刷盘与磁盘；消费者处理成功后再提交 offset，业务写入与提交要协调。即使如此，跨系统端到端仍需 outbox、事务或对账补偿。必须监控失败重试和 ISR，而非只配一个参数。",
+    "followUps": [
+      {
+        "question": "acks=all 是否绝对不丢？",
+        "answer": "不是，副本配置、同时故障和应用忽略发送异常仍可能丢失。"
+      },
+      {
+        "question": "消费成功但 offset 未提交会怎样？",
+        "answer": "重启后重复消费，因此业务处理必须幂等。"
+      }
+    ],
+    "pitfalls": [
+      "可靠性、吞吐和延迟需要共同权衡。"
+    ],
+    "tags": [
+      "Kafka",
+      "消息可靠性"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0207",
+    "shortAnswer": "Kafka 通常提供至少一次投递，防重复消费要靠业务幂等而非仅依赖 Broker。",
+    "fullAnswer": "重复可能来自消费者处理成功后提交 offset 前宕机、重平衡或生产者重试。消费者可用业务唯一键、数据库唯一约束、幂等表或状态机，使同一事件重复到达不产生第二次副作用；写数据库和 offset 可结合事务消费，但跨外部系统仍需补偿。幂等记录要有生命周期与并发原子性，并监控重复率。",
+    "followUps": [
+      {
+        "question": "为什么先提交 offset 不可取？",
+        "answer": "提交后业务处理失败会造成消息永久跳过。"
+      },
+      {
+        "question": "Redis SETNX 能完全实现幂等吗？",
+        "answer": "需考虑过期、处理失败和 Redis 与业务库原子性，数据库唯一约束通常更可靠。"
+      }
+    ],
+    "pitfalls": [
+      "去重消息 ID 必须稳定，不能每次重试重新生成。"
+    ],
+    "tags": [
+      "Kafka",
+      "幂等消费"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0208",
+    "shortAnswer": "MySQL 三大日志通常指 redo log、undo log 和 binlog，分别服务持久性、回滚/MVCC 与复制恢复。",
+    "fullAnswer": "redo log 是 InnoDB 物理重做日志，先写日志再落页以保证崩溃恢复；undo log 保存旧版本，支持事务回滚和一致性读；binlog 属于 Server 层，记录逻辑变更，用于主从复制与时间点恢复。提交时通过两阶段提交协调 redo 与 binlog，减少不一致。还要关注刷盘策略、保留周期和备份恢复演练。",
+    "followUps": [
+      {
+        "question": "redo log 与 binlog 为什么都需要？",
+        "answer": "redo 面向存储引擎崩溃恢复，binlog 面向逻辑复制和归档，职责不同。"
+      },
+      {
+        "question": "undo log 何时清理？",
+        "answer": "没有活跃 Read View 需要旧版本后由 purge 线程回收。"
+      }
+    ],
+    "pitfalls": [
+      "日志存在不等于可恢复，必须定期验证备份链。"
+    ],
+    "tags": [
+      "MySQL",
+      "日志"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0209",
+    "shortAnswer": "准备理想汽车 Java 面试应把通用后端基础与高可靠、实时数据或车联网业务意识结合。",
+    "fullAnswer": "在缺少 JD 时，先掌握 Java 集合并发、JVM、Spring、MySQL、Redis、MQ 和网络，再准备项目中的容量、延迟、故障恢复与数据一致性证据。汽车相关团队可能关注高可用与安全，但不能据此臆测固定题型。应阅读正式岗位描述，针对实际技术栈做模拟追问，并明确哪些经验亲自完成、哪些只是了解。",
+    "followUps": [
+      {
+        "question": "如何回答不熟悉的汽车业务问题？",
+        "answer": "先澄清场景和约束，再用通用可靠性原则分析，不虚构领域经验。"
+      },
+      {
+        "question": "项目指标要准备哪些证据？",
+        "answer": "流量、延迟分位数、错误率、资源变化和上线前后对照。"
+      }
+    ],
+    "pitfalls": [
+      "网络面经不能证明当前团队一定采用相同考点。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体轮次与岗位上下文，按通用 Java 后端面试准备回答。"
+  },
+  {
+    "sourceId": "src-0210",
+    "shortAnswer": "联想 Java 面试准备应以岗位 JD 为准，系统复盘 Java 后端基础与个人项目。",
+    "fullAnswer": "通用范围包括语言与集合、并发、JVM、Spring、数据库、缓存、消息队列、HTTP 和 Linux 排障。对简历每项技术准备为什么选、怎样实现、出现过什么故障、指标如何验证；算法与 SQL 需动手练。不同业务线差异大，应通过招聘描述和面试沟通确认重点，而不是把公司名称当作技术范围。",
+    "followUps": [
+      {
+        "question": "遇到简历外技术怎么回答？",
+        "answer": "说明了解程度，用相邻知识推导，并明确未实践，避免装作做过。"
+      },
+      {
+        "question": "怎样做项目深挖演练？",
+        "answer": "连续追问数据规模、失败模式、替代方案和个人贡献，检查证据能否闭环。"
+      }
+    ],
+    "pitfalls": [
+      "不要背诵公司题单而忽视自己的简历真实性。"
+    ],
+    "tags": [
+      "企业面试",
+      "面试准备"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体轮次与岗位上下文，按通用 Java 后端面试准备回答。"
+  },
+  {
+    "sourceId": "src-0211",
+    "shortAnswer": "蚂蚁金服 Java 面试准备应重视扎实基础、分布式一致性、金融安全意识和项目取舍。",
+    "fullAnswer": "除 Java 并发、JVM、Spring、MySQL、缓存和消息外，应能分析幂等、事务、资金类状态机、限流降级、数据审计与灾备，但不能假设所有团队题型相同。项目回答用明确指标和故障证据，算法题写出复杂度与边界。对金融场景优先正确性和可追溯性，并说明最终一致与强一致的选择条件。",
+    "followUps": [
+      {
+        "question": "支付回调为什么强调幂等？",
+        "answer": "网络重试会导致重复通知，业务唯一键和原子状态转移可避免重复入账。"
+      },
+      {
+        "question": "高可用与一致性冲突时怎么回答？",
+        "answer": "先按业务风险明确可接受的不一致窗口，再选择事务、补偿或拒绝服务。"
+      }
+    ],
+    "pitfalls": [
+      "不要把高并发口号替代具体容量与故障方案。"
+    ],
+    "tags": [
+      "企业面试",
+      "分布式系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体轮次与岗位上下文，按金融 Java 后端通用场景回答。"
+  },
+  {
+    "sourceId": "src-0212",
+    "shortAnswer": "MyBatis 的 #{} 使用预编译参数绑定，${} 做字符串替换，后者更容易造成 SQL 注入。",
+    "fullAnswer": "#{} 最终生成 ? 占位符，由 PreparedStatement 绑定类型和值，用户输入不会改变 SQL 结构；${} 在生成 SQL 前直接拼接，适合无法参数化的表名、列名或排序关键字，但必须来自服务端白名单，绝不能直接接收用户文本。两者对引号、执行计划复用也不同。动态 SQL 应优先标签和参数绑定。",
+    "followUps": [
+      {
+        "question": "ORDER BY 字段为什么常用 ${}？",
+        "answer": "列名不能作为普通参数绑定，但应把外部枚举映射到固定列名后再拼接。"
+      },
+      {
+        "question": "#{} 能防所有安全问题吗？",
+        "answer": "不能防越权、危险业务条件或错误动态结构，仍需授权与输入校验。"
+      }
+    ],
+    "pitfalls": [
+      "不要把模板占位符术语误认为可以安全拼接任意输入。"
+    ],
+    "tags": [
+      "MyBatis",
+      "SQL注入"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0213",
+    "shortAnswer": "准备美团 Java 面试应覆盖通用基础、业务高并发设计、性能排障和项目深挖。",
+    "fullAnswer": "在未给岗位信息时，可复习 Java 并发与 JVM、Spring、MySQL 索引事务、Redis、MQ、网络和 Linux，并练习容量估算、热点治理、幂等与降级。简历项目需说明流量、瓶颈、个人修改和验证指标。美团业务线众多，题型不能由公司名推断，正式 JD 和团队方向应作为最终范围。",
+    "followUps": [
+      {
+        "question": "系统设计题第一步是什么？",
+        "answer": "先澄清规模、读写比例、一致性、延迟和故障容忍，再画架构。"
+      },
+      {
+        "question": "性能优化怎样证明有效？",
+        "answer": "提供压测方法、基线、分位延迟、资源占用和正确性回归。"
+      }
+    ],
+    "pitfalls": [
+      "不要用“高并发”三个字代替量化约束。"
+    ],
+    "tags": [
+      "企业面试",
+      "系统设计"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体轮次与岗位上下文，按通用 Java 后端面试准备回答。"
+  },
+  {
+    "sourceId": "src-0214",
+    "shortAnswer": "JVM 垃圾收集机制包括分代回收、可达性分析和不同收集器的并发或停顿策略。",
+    "fullAnswer": "对象是否存活通常从 GC Roots 做可达性分析；新生代常复制，老年代可标记清除或标记整理。Serial、Parallel、CMS、G1、ZGC、Shenandoah 等在吞吐、停顿和资源间取舍，CMS 已在较新 JDK 移除。选型必须带 JDK 版本、堆大小和 SLA，用 GC 日志观察暂停、分配速率、晋升与回收效果。",
+    "followUps": [
+      {
+        "question": "G1 的 Region 有什么价值？",
+        "answer": "把堆划分为多个区域并按收益回收，使停顿预测比固定连续分代更灵活。"
+      },
+      {
+        "question": "低停顿收集器是否没有 STW？",
+        "answer": "仍有短暂必须停顿的阶段，只是大量工作并发完成。"
+      }
+    ],
+    "pitfalls": [
+      "不能脱离 JDK 版本比较收集器。"
+    ],
+    "tags": [
+      "JVM",
+      "GC"
+    ],
+    "difficulty": "中等",
+    "contextNote": "不同 GC 的可用性和实现以目标 JDK 版本为准。"
+  },
+  {
+    "sourceId": "src-0215",
+    "shortAnswer": "Linux 上先用 top、ps 或 pidstat 找出 CPU 最高的进程及其 PID。",
+    "fullAnswer": "可运行 top 实时观察并按 P 排序，或用 ps -eo pid,ppid,cmd,%cpu --sort=-%cpu 查看快照；pidstat -u 1 能看持续变化。确认是否单核打满、系统态、用户态或 iowait 后，再进入线程和代码级定位。采样时记录时间与负载，避免高频诊断命令进一步冲击生产，并将异常进程与发布、请求量和容器配额关联分析。",
+    "followUps": [
+      {
+        "question": "top 中 100% CPU 一定代表整机满吗？",
+        "answer": "多核系统里可能只占满一个逻辑核，要结合总核数与各核视图。"
+      },
+      {
+        "question": "如果 CPU 高但进程列表不明显呢？",
+        "answer": "检查采样窗口、短时进程、中断 softirq、steal 和容器限制。"
+      }
+    ],
+    "pitfalls": [
+      "不能看到最高进程就立即重启，应先保留诊断证据。"
+    ],
+    "tags": [
+      "Linux",
+      "CPU排障"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0216",
+    "shortAnswer": "定位进程内高 CPU 线程可用 top -H -p PID、pidstat -t 或 ps 的线程视图。",
+    "fullAnswer": "先得到线程的十进制 TID，再转换成十六进制，与 jstack 或 jcmd Thread.print 中的 nid 对照，观察多次线程栈以区分持续热点与偶发采样。若线程在 native 或 JIT 代码，可配合 async-profiler、perf。执行栈抓取可能有开销，应限次并保留时间对应关系，最终还要回到具体请求和业务指标验证热点是否异常。",
+    "followUps": [
+      {
+        "question": "为什么要抓多次线程栈？",
+        "answer": "单次快照可能碰巧采到短任务，多次相同栈更能说明持续热点。"
+      },
+      {
+        "question": "TID 如何和 Java 栈关联？",
+        "answer": "把操作系统十进制线程 ID 转十六进制，匹配线程转储中的 nid。"
+      }
+    ],
+    "pitfalls": [
+      "线程 CPU 高也可能是合理业务负载，要结合吞吐和调用来源。"
+    ],
+    "tags": [
+      "Linux",
+      "Java线程"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0217",
+    "shortAnswer": "深分页变慢是因为数据库要扫描、排序并丢弃 offset 之前的大量记录。",
+    "fullAnswer": "LIMIT offset,size 即使最终只返回少量行，也可能读取 offset+size 条索引记录，再回表或排序；页码越深成本越高。若按唯一递增键排序，可改为 WHERE (time,id) > (?,?) ORDER BY time,id LIMIT n 的游标翻页；也可先在覆盖索引取主键再关联。必须保证稳定排序并处理并发插入，不能只增大缓存。",
+    "followUps": [
+      {
+        "question": "游标翻页为什么需要唯一排序键？",
+        "answer": "仅按非唯一时间会漏行或重复，组合主键才能确定上一页边界。"
+      },
+      {
+        "question": "什么场景仍可用 offset？",
+        "answer": "页数浅、数据量小或用户必须随机跳页且成本可接受时。"
+      }
+    ],
+    "pitfalls": [
+      "优化 SQL 前应通过执行计划确认扫描和回表量。"
+    ],
+    "tags": [
+      "MySQL",
+      "分页"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0218",
+    "shortAnswer": "Java CPU 或内存过高要先确认现象和时间，再从进程、线程、堆与 GC 逐层取证。",
+    "fullAnswer": "CPU 高先用 top/pidstat 找进程与线程，结合 jstack、jcmd、async-profiler 定位热点；内存高先区分堆、元空间、直接内存和 page cache，用 GC 日志、jstat、jcmd GC.heap_info，必要时在安全条件下导出 heap dump。诊断要关联流量和发布，控制工具开销；修复后用相同负载验证而非仅重启，并持续观察长尾延迟和回收后的内存基线。",
+    "followUps": [
+      {
+        "question": "RSS 高但 Java 堆不高可能是什么？",
+        "answer": "直接内存、线程栈、mmap、共享库或分配器未归还操作系统。"
+      },
+      {
+        "question": "频繁 Full GC 应先看什么？",
+        "answer": "分配速率、老年代占用、晋升失败、元空间和 GC 原因。"
+      }
+    ],
+    "pitfalls": [
+      "线上导出大堆可能造成停顿和磁盘打满。"
+    ],
+    "tags": [
+      "Java排障",
+      "CPU",
+      "内存"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0219",
+    "shortAnswer": "HTTP 状态码按 1xx 信息、2xx 成功、3xx 重定向、4xx 客户端错误和 5xx 服务端错误分类。",
+    "fullAnswer": "常见有 200 成功、201 创建、204 无正文；301/308 永久重定向，302/307 临时重定向；400 参数错误、401 未认证、403 无权限、404 不存在、409 冲突、429 限流；500 内部错误、502 上游坏响应、503 暂不可用、504 上游超时。API 应结合方法语义稳定使用，并返回可追踪错误码，避免一律 200；客户端重试还应区分幂等请求和永久性参数错误。",
+    "followUps": [
+      {
+        "question": "401 与 403 如何区分？",
+        "answer": "401 表示缺少或无效认证，403 表示身份已知但没有权限。"
+      },
+      {
+        "question": "502 与 504 的差别是什么？",
+        "answer": "502 是网关收到无效上游响应，504 是等待上游超时。"
+      }
+    ],
+    "pitfalls": [
+      "状态码不能替代业务错误详情和请求追踪 ID。"
+    ],
+    "tags": [
+      "HTTP",
+      "状态码"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0220",
+    "shortAnswer": "MySQL 可用 INSERT ... ON DUPLICATE KEY UPDATE 实现存在则更新、否则插入。",
+    "fullAnswer": "前提是冲突条件由主键或唯一索引定义，例如 INSERT INTO t(id,value) VALUES(?,?) ON DUPLICATE KEY UPDATE value=VALUES(value)。MySQL 新版本推荐使用行别名替代部分 VALUES() 写法，具体语法需看版本。该语句是原子的，但可能触发任意唯一键冲突，需明确受影响行数、触发器和自增行为。其他数据库语法并不相同。",
+    "followUps": [
+      {
+        "question": "没有唯一索引能可靠 upsert 吗？",
+        "answer": "不能，必须由数据库约束定义“同一条记录”，否则并发下会插入重复。"
+      },
+      {
+        "question": "PostgreSQL 对应语法是什么？",
+        "answer": "INSERT ... ON CONFLICT (...) DO UPDATE，冲突目标需明确。"
+      }
+    ],
+    "pitfalls": [
+      "不要先 SELECT 再决定 INSERT/UPDATE，那会产生并发竞态。"
+    ],
+    "tags": [
+      "MySQL",
+      "Upsert"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体别名与 VALUES() 支持以 MySQL 版本为准。"
+  },
+  {
+    "sourceId": "src-0221",
+    "shortAnswer": "ThreadPoolExecutor 的核心参数是核心线程数、最大线程数、存活时间、时间单位、队列、线程工厂和拒绝策略。",
+    "fullAnswer": "提交任务时先创建到 corePoolSize，再入队；队列满后扩到 maximumPoolSize，仍满则拒绝。keepAliveTime 控制非核心空闲线程，allowCoreThreadTimeOut 可扩展到核心。参数要按 CPU/IO 特性和外部容量压测，队列必须有界并监控活跃数、排队和拒绝，不能用无界队列掩盖过载；任务还应携带超时和取消语义，防止失效请求继续占用资源。",
+    "followUps": [
+      {
+        "question": "无界队列会让最大线程数怎样？",
+        "answer": "核心线程创建后任务持续入队，通常不会扩到最大线程数，却可能积压耗尽内存。"
+      },
+      {
+        "question": "CallerRunsPolicy 有什么作用？",
+        "answer": "由提交线程执行任务形成反压，但可能拖慢上游甚至造成级联阻塞。"
+      }
+    ],
+    "pitfalls": [
+      "线程数公式只是估算，最终应依据实测和下游限制。"
+    ],
+    "tags": [
+      "线程池",
+      "Java并发"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0222",
+    "shortAnswer": "MySQL 事务具备 ACID，InnoDB 通过日志、锁和 MVCC 协同实现。",
+    "fullAnswer": "原子性依靠 undo 回滚，持久性依靠 redo 与刷盘，隔离性由锁、Read View 和 MVCC 保证，一致性是约束、应用规则及前三者共同结果。不同隔离级别处理脏读、不可重复读和幻读的方式不同；binlog 与 redo 通过两阶段提交协调。业务还需正确划分事务边界，避免长事务和外部调用被包入。",
+    "followUps": [
+      {
+        "question": "MVCC 是否完全不需要锁？",
+        "answer": "不是，快照读多用版本链，当前读和写仍需要记录锁或间隙锁。"
+      },
+      {
+        "question": "事务提交成功就绝不会丢吗？",
+        "answer": "还取决于刷盘配置、硬件与复制策略，应结合恢复目标设计。"
+      }
+    ],
+    "pitfalls": [
+      "ACID 中一致性不是单独一种存储机制。"
+    ],
+    "tags": [
+      "MySQL",
+      "事务"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0223",
+    "shortAnswer": "准备米哈游 Java 面试应以目标团队 JD 为中心，兼顾后端基础、性能与业务实时性。",
+    "fullAnswer": "通用准备包括 Java 并发、JVM、Spring、MySQL、Redis、消息、网络和 Linux 排障；游戏相关业务可能涉及高并发、状态一致与延迟，但不能据公司名推断固定题型。项目要能量化负载、解释故障恢复与个人贡献，算法题需写边界和复杂度。对不熟悉领域应澄清场景并诚实说明经验。",
+    "followUps": [
+      {
+        "question": "实时业务设计先问什么？",
+        "answer": "在线规模、延迟目标、状态归属、一致性要求和断线恢复方式。"
+      },
+      {
+        "question": "如何展示性能经验？",
+        "answer": "说明瓶颈证据、优化动作、压测方法以及正确性回归。"
+      }
+    ],
+    "pitfalls": [
+      "不要把兴趣或产品体验冒充工程实践。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位和面试轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0224",
+    "shortAnswer": "synchronized 基于对象监视器与 JVM 锁实现，字节码表现为 monitorenter/monitorexit 或方法标志。",
+    "fullAnswer": "代码块编译为 monitorenter 和成对 monitorexit，异常路径也释放；同步方法由 ACC_SYNCHRONIZED 标志表示。进入临界区建立 happens-before，保证互斥与可见性。JVM 会用轻量竞争路径、锁膨胀等优化，具体实现随 JDK 变化。锁对象身份决定竞争范围，持锁期间不要做长时间 IO。",
+    "followUps": [
+      {
+        "question": "可重入如何体现？",
+        "answer": "同一线程再次进入同一监视器会增加持有计数，退出时逐次减少。"
+      },
+      {
+        "question": "synchronized 如何保证可见性？",
+        "answer": "解锁先行发生于随后对同一监视器的加锁，线程能看到之前写入。"
+      }
+    ],
+    "pitfalls": [
+      "不要依赖旧 JDK 的锁优化名词推断所有版本行为。"
+    ],
+    "tags": [
+      "synchronized",
+      "JVM"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "底层优化细节随 JDK 实现变化。"
+  },
+  {
+    "sourceId": "src-0225",
+    "shortAnswer": "Redis 分布式锁过期问题应通过租期续约、业务幂等和所有权校验共同处理。",
+    "fullAnswer": "获取锁用唯一 token 和带 NX、PX 的原子命令，释放时 Lua 校验 token。任务可能超过租期时可由 watchdog 在持有者健康且仍拥有锁时续约，但进程长停顿仍可能失锁，所以写资源要用 fencing token 或数据库版本防旧持有者继续提交。设置最大执行时间并监控续约失败，不能只把过期时间设得很大。",
+    "followUps": [
+      {
+        "question": "watchdog 为什么仍不能完全保证安全？",
+        "answer": "长时间 STW 或网络分区可能让租期失效，而旧线程恢复后仍以为自己持锁。"
+      },
+      {
+        "question": "fencing token 如何工作？",
+        "answer": "每次获锁取得递增编号，下游只接受大于已见编号的写入。"
+      }
+    ],
+    "pitfalls": [
+      "Redis 锁不能替代业务层幂等和最终状态约束。"
+    ],
+    "tags": [
+      "Redis",
+      "分布式锁"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0226",
+    "shortAnswer": "LIMIT 查询第 200 页比第 1 页慢，因为数据库需要扫描并丢弃更多前置记录。",
+    "fullAnswer": "例如 LIMIT 1990,10 可能读取并排序前 2000 条，若索引不覆盖还会大量回表，而第一页只需很少记录。优化可用基于唯一有序键的游标条件，或先用覆盖索引获取主键再回表。需要随机跳页时可限制最大页码或预计算位置。执行计划与扫描行数是判断依据，并发写入下还要保证排序稳定。",
+    "followUps": [
+      {
+        "question": "为什么仅给排序列建索引仍可能慢？",
+        "answer": "选择列不在索引时深分页产生大量回表，覆盖索引能减少成本。"
+      },
+      {
+        "question": "游标分页的缺点是什么？",
+        "answer": "不便随机跳到任意页，并需客户端保存上一页边界。"
+      }
+    ],
+    "pitfalls": [
+      "页码差异是扫描量差异，不是 LIMIT 语法本身变慢。"
+    ],
+    "tags": [
+      "MySQL",
+      "深分页"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0227",
+    "shortAnswer": "synchronized 是自动管理的 JVM 监视器锁，ReentrantLock 是可编程的显式可重入锁。",
+    "fullAnswer": "两者都提供互斥和 happens-before。synchronized 语法简洁、异常自动释放；ReentrantLock 支持 tryLock、lockInterruptibly、公平性和多个 Condition，但必须 finally 解锁。选择应看是否需要这些高级能力和可观测性，而非旧版本性能印象。任何锁都应缩小临界区，避免持锁 IO，并通过并发测试验证。",
+    "followUps": [
+      {
+        "question": "Condition 比 wait/notify 多什么？",
+        "answer": "一个 Lock 可创建多个等待队列，实现更精确的条件通知。"
+      },
+      {
+        "question": "tryLock 适合什么场景？",
+        "answer": "不能无限等待、需要超时降级或规避多锁死锁的场景。"
+      }
+    ],
+    "pitfalls": [
+      "不要忘记 ReentrantLock 获取成功后才进入 finally 解锁。"
+    ],
+    "tags": [
+      "Java并发",
+      "ReentrantLock"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0228",
+    "shortAnswer": "Java Thread.State 包含 NEW、RUNNABLE、BLOCKED、WAITING、TIMED_WAITING 和 TERMINATED。",
+    "fullAnswer": "NEW 尚未 start；RUNNABLE 合并了操作系统的可运行与运行；BLOCKED 等待进入 synchronized；WAITING 通过 wait、join、park 等无限等待；TIMED_WAITING 带超时；TERMINATED 已结束。状态只是采样瞬间，排障应结合多次线程转储和锁信息，不能看到 WAITING 就判定异常，还要确认线程池设计和当时业务负载。",
+    "followUps": [
+      {
+        "question": "sleep 对应什么状态？",
+        "answer": "通常是 TIMED_WAITING，且不会释放已持有的监视器锁。"
+      },
+      {
+        "question": "等待 ReentrantLock 一定显示 BLOCKED 吗？",
+        "answer": "通常基于 park，可能显示 WAITING，而 BLOCKED 专指等待监视器。"
+      }
+    ],
+    "pitfalls": [
+      "Java 状态与操作系统线程状态不是一一对应。"
+    ],
+    "tags": [
+      "Java线程",
+      "线程状态"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0229",
+    "shortAnswer": "sleep 是 Thread 的定时暂停，不释放锁；wait 是 Object 的条件等待，会释放对应监视器。",
+    "fullAnswer": "sleep 可在任意位置调用，时间到或被中断后进入可运行；wait 必须在持有该对象监视器的同步块中调用，释放监视器后等待 notify/notifyAll、超时或中断，醒来还要重新竞争锁。wait 应放在 while 条件循环中防虚假唤醒。现代并发常优先使用 Condition、Latch 或阻塞队列表达意图。",
+    "followUps": [
+      {
+        "question": "为什么 wait 必须用 while？",
+        "answer": "被唤醒不保证条件成立，可能是虚假唤醒或其他线程先消费了条件。"
+      },
+      {
+        "question": "sleep 会释放 CPU 吗？",
+        "answer": "暂停期间不占用执行时间，但不释放已经持有的 Java 锁。"
+      }
+    ],
+    "pitfalls": [
+      "notify 只唤醒一个等待者，选择不可预测，使用需谨慎。"
+    ],
+    "tags": [
+      "Java线程",
+      "wait",
+      "sleep"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0230",
+    "shortAnswer": "线程池通过工作线程复用、任务队列和拒绝策略控制并发与资源上限。",
+    "fullAnswer": "ThreadPoolExecutor 收到任务后先补足核心线程，再入队；队列满时扩至最大线程，仍无法接收则执行拒绝策略。工作线程循环取任务，非核心线程空闲超过阈值可退出。合理设计要使用有界队列、命名线程、捕获异常并监控活跃数、队列长度和拒绝。关闭时区分 shutdown 与 shutdownNow，并给任务留退出机制。",
+    "followUps": [
+      {
+        "question": "任务抛异常后线程会怎样？",
+        "answer": "execute 的未捕获异常可能终止工作线程并由池补充，submit 的异常保存在 Future。"
+      },
+      {
+        "question": "如何优雅关闭？",
+        "answer": "先 shutdown 停止接收，等待超时，再视情况 shutdownNow 并处理中断。"
+      }
+    ],
+    "pitfalls": [
+      "线程池不是越大越快，下游容量决定安全并发。"
+    ],
+    "tags": [
+      "线程池",
+      "工作原理"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0231",
+    "shortAnswer": "线程池七个构造参数共同决定工作线程、排队和过载行为。",
+    "fullAnswer": "corePoolSize 与 maximumPoolSize 控制线程范围，keepAliveTime 和 unit 控制空闲回收，workQueue 保存待执行任务，threadFactory 命名并配置线程，handler 在饱和时拒绝。队列类型会改变扩容路径：无界队列使最大线程几乎失效，SynchronousQueue 直接交接。参数应由任务阻塞比、内存和下游限额压测得出。",
+    "followUps": [
+      {
+        "question": "核心线程默认会超时吗？",
+        "answer": "默认不会，可调用 allowCoreThreadTimeOut 让其也按存活时间回收。"
+      },
+      {
+        "question": "拒绝策略怎样选择？",
+        "answer": "按业务决定失败、丢弃、覆盖或调用方执行，并必须监控和补偿。"
+      }
+    ],
+    "pitfalls": [
+      "固定公式不能替代真实负载压测。"
+    ],
+    "tags": [
+      "线程池",
+      "参数"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0232",
+    "shortAnswer": "execute 接受 Runnable 且无返回值，submit 接受 Runnable/Callable 并返回 Future。",
+    "fullAnswer": "execute 中任务的未捕获异常通常交给线程的 UncaughtExceptionHandler；submit 会把结果或异常封装进 Future，若调用方不 get，异常可能被悄然忽略。submit 支持取消和超时等待，但大量不消费的 Future 也会增加管理成本。无论哪种都应设置统一任务包装、Trace 与异常监控，避免任务失败无感知。",
+    "followUps": [
+      {
+        "question": "submit Runnable 的 Future 返回什么？",
+        "answer": "成功完成时通常返回 null，也可使用带 result 参数的重载。"
+      },
+      {
+        "question": "如何发现 submit 中的异常？",
+        "answer": "调用 Future.get 捕获 ExecutionException，或在 afterExecute 中正确检查 Future。"
+      }
+    ],
+    "pitfalls": [
+      "选择 submit 不代表任务自动可靠重试。"
+    ],
+    "tags": [
+      "线程池",
+      "Future"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0233",
+    "shortAnswer": "Spring IoC 初始化大致经历环境准备、BeanDefinition 加载、工厂后处理、实例化和后处理器增强。",
+    "fullAnswer": "ApplicationContext refresh 时创建或刷新 BeanFactory，读取配置并注册 BeanDefinition，执行 BeanFactoryPostProcessor，再注册 BeanPostProcessor；随后实例化非懒加载单例，进行构造、属性填充、Aware 回调、初始化前后处理和 init 方法，最后发布完成事件。循环依赖和代理会影响细节。不同 Spring 版本实现会变，应抓住阶段与扩展点。",
+    "followUps": [
+      {
+        "question": "BeanFactoryPostProcessor 与 BeanPostProcessor 区别？",
+        "answer": "前者修改 BeanDefinition，后者围绕具体 Bean 实例初始化进行增强。"
+      },
+      {
+        "question": "AOP 代理通常在哪产生？",
+        "answer": "相关 BeanPostProcessor 在初始化后阶段返回代理对象。"
+      }
+    ],
+    "pitfalls": [
+      "不要把所有 Bean 都说成 refresh 时立即创建，懒加载是例外。"
+    ],
+    "tags": [
+      "Spring",
+      "IoC"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体内部类和时序以 Spring 版本为准。"
+  },
+  {
+    "sourceId": "src-0234",
+    "shortAnswer": "BeanFactory 是基础容器接口，ApplicationContext 在其上提供企业应用所需的完整能力。",
+    "fullAnswer": "BeanFactory 负责 BeanDefinition、依赖注入和生命周期；ApplicationContext 通常预实例化非懒单例，并增加事件发布、国际化、资源加载、环境配置和自动注册后处理器。应用代码通常使用 ApplicationContext，框架底层或极简场景才直接操作 BeanFactory。两者是能力层次关系，不应理解为完全独立容器。",
+    "followUps": [
+      {
+        "question": "为什么 BeanFactoryPostProcessor 能自动生效？",
+        "answer": "ApplicationContext 的 refresh 流程会发现并调用它们，裸 BeanFactory 需手动处理。"
+      },
+      {
+        "question": "ApplicationContext 一定立即创建所有 Bean 吗？",
+        "answer": "非懒单例通常如此，prototype、lazy 和条件未满足的 Bean 例外。"
+      }
+    ],
+    "pitfalls": [
+      "不要把“延迟加载”当作两者唯一差异。"
+    ],
+    "tags": [
+      "Spring",
+      "BeanFactory"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0235",
+    "shortAnswer": "准备平安银行 Java 面试应突出交易正确性、安全合规、稳定性以及通用后端基础。",
+    "fullAnswer": "除 Java、并发、JVM、Spring、MySQL、Redis 和 MQ 外，要能解释幂等、事务边界、分布式锁、审计、限流与灾备。面经标题缺少岗位和轮次，不能推断固定题库；应以 JD 和真实项目为准，回答资金场景时优先一致性、授权和可追溯，并明确未实践内容。算法、SQL 与 Linux 排障也应现场演练。",
+    "followUps": [
+      {
+        "question": "银行场景为何特别重视状态机？",
+        "answer": "它限制非法状态跳转并为重试、补偿和审计提供清晰依据。"
+      },
+      {
+        "question": "如何证明系统可恢复？",
+        "answer": "说明备份、日志、RPO/RTO、故障演练以及对账补偿证据。"
+      }
+    ],
+    "pitfalls": [
+      "不要为迎合岗位虚构金融项目经验。"
+    ],
+    "tags": [
+      "企业面试",
+      "金融系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按银行 Java 后端通用场景回答。"
+  },
+  {
+    "sourceId": "src-0236",
+    "shortAnswer": "准备去哪儿 Java 面试应围绕 Java 后端基础、旅游交易链路、高并发与项目排障展开。",
+    "fullAnswer": "未给具体团队时，通用复习集合并发、JVM、Spring、MySQL、Redis、MQ、HTTP 和 Linux。交易类场景可练习库存、价格、订单幂等和超时补偿，但只能作为系统设计练习，不能声称公司必考。项目需准备流量、缓存一致、故障定位和个人贡献，并按 JD 调整算法或业务重点。",
+    "followUps": [
+      {
+        "question": "订单超时设计需考虑什么？",
+        "answer": "状态机、幂等、延迟消息、支付结果查询和最终对账，避免单凭本地定时器。"
+      },
+      {
+        "question": "怎样回答没有旅游业务经验？",
+        "answer": "先澄清一致性和规模，用通用交易模型推导并明确经验边界。"
+      }
+    ],
+    "pitfalls": [
+      "不要把公开面经视为当前团队的完整画像。"
+    ],
+    "tags": [
+      "企业面试",
+      "交易系统"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0237",
+    "shortAnswer": "HashMap 在 JDK 8 以数组加链表或红黑树存储，依靠哈希定位桶。",
+    "fullAnswer": "put 时扰动 hash 后计算桶下标，空桶直接插入，冲突时遍历链表或树并按 key 相等更新；元素超过负载阈值通常扩容为两倍。链表长度达到阈值且容量足够时树化，降低恶意冲突。它允许 null 且非线程安全。实现细节随 JDK 变化，正确使用更应关注 equals/hashCode 契约和容量。",
+    "followUps": [
+      {
+        "question": "为什么容量通常是 2 的幂？",
+        "answer": "下标可用位与运算，扩容时旧 hash 的新增高位决定原位或偏移位。"
+      },
+      {
+        "question": "树化为何还要求最小容量？",
+        "answer": "容量小时扩容通常比树化更能减少冲突，避免过早增加树结构开销。"
+      }
+    ],
+    "pitfalls": [
+      "可变对象作为 key 可能导致后续无法查回。"
+    ],
+    "tags": [
+      "HashMap",
+      "集合"
+    ],
+    "difficulty": "中等",
+    "contextNote": "结构阈值与实现以目标 JDK 为准。"
+  },
+  {
+    "sourceId": "src-0238",
+    "shortAnswer": "并发读写不要使用普通 HashMap，应按操作语义选择 ConcurrentHashMap 或外部同步。",
+    "fullAnswer": "ConcurrentHashMap 在 JDK 8 通过 CAS、桶级 synchronized 和协助扩容提升并发，单个 get/put 线程安全，但复合“先查再改”仍需 compute、merge 等原子方法。需要一致快照或多键事务时，要使用锁或其他存储。不可用 synchronizedMap 后再迭代而不持锁，也不能假设 size 在并发中是精确业务条件。",
+    "followUps": [
+      {
+        "question": "putIfAbsent 解决什么竞态？",
+        "answer": "把不存在检查和插入合为一个原子操作，避免两个线程同时创建。"
+      },
+      {
+        "question": "ConcurrentHashMap 可以存 null 吗？",
+        "answer": "不可以，以免并发查询无法区分缺失和映射值为 null。"
+      }
+    ],
+    "pitfalls": [
+      "线程安全容器不保证跨多个调用的业务原子性。"
+    ],
+    "tags": [
+      "ConcurrentHashMap",
+      "并发"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0239",
+    "shortAnswer": "HTTP/1.0、1.1、2 和 3 的主要差异在连接复用、多路复用、头部压缩与传输协议。",
+    "fullAnswer": "HTTP/1.0 常短连接；1.1 默认持久连接和流水线但仍有应用层队头阻塞；HTTP/2 在单 TCP 连接用二进制帧多路复用、HPACK 压缩并支持流优先级；HTTP/3 基于 QUIC/UDP，各流独立，减少传输层队头阻塞并改进握手。语义基本延续，部署要考虑代理、证书、UDP 可达与版本回退。",
+    "followUps": [
+      {
+        "question": "HTTP/2 是否完全没有队头阻塞？",
+        "answer": "应用流间减少了，但 TCP 丢包仍会阻塞连接中的所有流。"
+      },
+      {
+        "question": "HTTP/3 为什么仍需 TLS？",
+        "answer": "QUIC 集成 TLS 1.3，为连接提供加密和认证。"
+      }
+    ],
+    "pitfalls": [
+      "协议版本更高不保证所有网络环境都更快。"
+    ],
+    "tags": [
+      "HTTP",
+      "协议版本"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0240",
+    "shortAnswer": "Java 线程有 NEW、RUNNABLE、BLOCKED、WAITING、TIMED_WAITING、TERMINATED 六种状态。",
+    "fullAnswer": "状态由 Thread.State 定义：创建未启动是 NEW，可运行或正在运行统一为 RUNNABLE，等待 synchronized 监视器是 BLOCKED，无限条件等待是 WAITING，带时限等待是 TIMED_WAITING，结束后为 TERMINATED。排查时应多次采样并结合锁拥有者和业务流量，因为正常线程池也会大量 WAITING；只有持续阻塞并影响吞吐时才需要治理。",
+    "followUps": [
+      {
+        "question": "线程在 socket read 时是什么状态？",
+        "answer": "Java 层常显示 RUNNABLE，即使操作系统线程实际阻塞于系统调用。"
+      },
+      {
+        "question": "join 不带超时是什么状态？",
+        "answer": "调用线程通常进入 WAITING，直到目标线程结束或被中断。"
+      }
+    ],
+    "pitfalls": [
+      "不要按状态名称直接推断 CPU 使用。"
+    ],
+    "tags": [
+      "Java线程",
+      "Thread.State"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0241",
+    "shortAnswer": "MVCC 通过版本链和 Read View 让读写在一定条件下并发而互不阻塞。",
+    "fullAnswer": "InnoDB 更新记录时写 undo 并维护隐藏事务信息，一致性读根据 Read View 判断哪个版本对当前事务可见。读已提交通常每条语句新建视图，可重复读通常事务首次快照读建立后复用。当前读仍获取锁，范围更新还可能使用间隙锁。长事务会阻止旧版本清理，应监控历史链和事务年龄。",
+    "followUps": [
+      {
+        "question": "MVCC 能解决幻读吗？",
+        "answer": "快照读通过一致视图避免结果变化，当前读则依赖 next-key lock 等机制。"
+      },
+      {
+        "question": "Read View 主要记录什么？",
+        "answer": "活跃事务集合、边界事务 ID 和创建者，用于判断版本可见性。"
+      }
+    ],
+    "pitfalls": [
+      "MVCC 不是无锁数据库，写写冲突仍需锁。"
+    ],
+    "tags": [
+      "MySQL",
+      "MVCC"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0242",
+    "shortAnswer": "MySQL 索引是用额外有序结构换取查询效率，InnoDB 主要使用 B+Tree。",
+    "fullAnswer": "聚簇索引叶子存整行，二级索引叶子存主键，因此二级查询可能回表。联合索引遵循按排序键前缀利用，范围条件后的列能否用于定位需看执行计划；覆盖索引可减少回表。索引会增加写放大和空间，低选择性列也未必无用。设计应从真实 SQL、过滤、排序和回表成本出发。",
+    "followUps": [
+      {
+        "question": "为什么 B+Tree 适合磁盘索引？",
+        "answer": "高扇出降低树高，叶子有序便于范围扫描，磁盘访问次数少。"
+      },
+      {
+        "question": "什么是最左前缀？",
+        "answer": "联合索引按列顺序排序，查询需从左侧连续约束才能有效定位。"
+      }
+    ],
+    "pitfalls": [
+      "不要以为建了索引优化器就一定使用。"
+    ],
+    "tags": [
+      "MySQL",
+      "索引"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0243",
+    "shortAnswer": "Redis 基础数据类型包括 String、Hash、List、Set、Sorted Set，以及 Stream 等扩展类型。",
+    "fullAnswer": "String 可做缓存、计数和位图；Hash 存对象字段；List 是有序序列；Set 去重并做集合运算；Sorted Set 按 score 排序，适合排行榜；Stream 支持消息流和消费组。底层编码会按元素规模变化，不能简单等同某种数据结构。选型要考虑操作复杂度、内存、热 key 和过期策略，避免大 key 阻塞。",
+    "followUps": [
+      {
+        "question": "排行榜为什么常用 Sorted Set？",
+        "answer": "score 提供排序，成员唯一，并支持排名和区间查询。"
+      },
+      {
+        "question": "Hash 一定比多个 String 省内存吗？",
+        "answer": "小对象常有优势，但编码和字段规模变化后需实测。"
+      }
+    ],
+    "pitfalls": [
+      "Redis 数据结构选择还要考虑删除和网络返回量。"
+    ],
+    "tags": [
+      "Redis",
+      "数据类型"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0244",
+    "shortAnswer": "红黑树是内存中的平衡二叉搜索树，B+树是面向块存储的多路有序索引。",
+    "fullAnswer": "红黑树每节点分支少、旋转维护近似平衡，单次查找 O(log n)，适合内存 Map；B+树节点容纳大量键，树高低，数据集中在叶子且叶子相连，适合磁盘与范围扫描。数据库选 B+树主要为减少随机 I/O，不是因为红黑树复杂度更差。并发、缓存与页大小也影响实际性能。",
+    "followUps": [
+      {
+        "question": "B+树范围查询为什么高效？",
+        "answer": "定位起点后可沿叶子链顺序读取，无需反复回到上层。"
+      },
+      {
+        "question": "红黑树为什么不追求严格平衡？",
+        "answer": "放宽平衡可减少插入删除旋转，同时保证最长路径有界。"
+      }
+    ],
+    "pitfalls": [
+      "大 O 相同不代表存储层访问成本相同。"
+    ],
+    "tags": [
+      "数据结构",
+      "B+树",
+      "红黑树"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0245",
+    "shortAnswer": "准备荣耀 Java 面试应以岗位技术栈为准，系统复盘 Java 基础、工程实践和项目证据。",
+    "fullAnswer": "可覆盖集合、并发、JVM、Spring、MySQL、Redis、网络、Linux 与分布式基础；若岗位涉及终端或云服务，再按 JD 补充对应领域。文章标题没有具体问题，不能推断面试流程或固定考点。项目应能说明需求、个人设计、故障处理、性能指标和边界，算法题则练习编码与测试。",
+    "followUps": [
+      {
+        "question": "如何根据 JD 提炼复习清单？",
+        "answer": "把必需技能映射到基础原理、项目证据和常见故障三列，优先补没有证据的高频项。"
+      },
+      {
+        "question": "公司业务知识准备到什么程度？",
+        "answer": "理解公开产品和岗位场景即可，不应虚构内部架构。"
+      }
+    ],
+    "pitfalls": [
+      "不要只背标准答案而无法解释取舍。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0246",
+    "shortAnswer": "HTTP 是应用层协议，HTTPS 是在 HTTP 与传输之间加入 TLS 提供加密、完整性和身份认证。",
+    "fullAnswer": "HTTP 明文易被窃听和篡改；HTTPS 通过证书验证服务器身份，密钥协商后用对称加密传输，并用完整性校验防篡改。HTTPS 有握手和证书运维成本，但 TLS 1.3、会话恢复与硬件加速已降低开销。它不能防服务器自身越权或 XSS，仍需应用安全、HSTS 和正确证书校验。",
+    "followUps": [
+      {
+        "question": "HTTPS 能隐藏访问域名吗？",
+        "answer": "通常 IP 可见，传统握手中域名也可能通过 SNI 暴露，ECH 支持情况另论。"
+      },
+      {
+        "question": "证书过期会怎样？",
+        "answer": "客户端验证失败并警告或拒绝连接，因此需自动续期与监控。"
+      }
+    ],
+    "pitfalls": [
+      "HTTPS 不等于网站业务逻辑安全。"
+    ],
+    "tags": [
+      "HTTP",
+      "HTTPS",
+      "TLS"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0247",
+    "shortAnswer": "HTTP 通信通常先经 DNS 解析，再建立传输连接，发送请求并接收响应。",
+    "fullAnswer": "HTTP/1.1 和 HTTP/2 多基于 TCP：客户端解析域名、选择 IP，经过三次握手建立连接，然后发送方法、路径、头和正文；服务器返回状态、头和正文，连接可复用。若是代理或负载均衡，还会有额外链路。HTTP/3 改用 QUIC，过程不同。排障需区分 DNS、连接、首字节与下载阶段。",
+    "followUps": [
+      {
+        "question": "Keep-Alive 的作用是什么？",
+        "answer": "复用连接，减少重复握手和慢启动开销，但需设置空闲与最大请求限制。"
+      },
+      {
+        "question": "连接建立后为何仍可能超时？",
+        "answer": "服务器排队、上游调用、响应生成或网络传输都可能耗时。"
+      }
+    ],
+    "pitfalls": [
+      "不能把 TCP 建连直接称为 HTTP 建连而忽略版本差异。"
+    ],
+    "tags": [
+      "HTTP",
+      "TCP"
+    ],
+    "difficulty": "基础",
+    "contextNote": "题目按 HTTP 请求链路理解。"
+  },
+  {
+    "sourceId": "src-0248",
+    "shortAnswer": "HTTPS 在传输连接之上完成 TLS 握手，验证证书并协商会话密钥后传输 HTTP。",
+    "fullAnswer": "以 TLS 1.3 为例，客户端发送支持版本、密码套件和密钥份额，服务器返回选择、证书与握手证明；客户端验证域名、证书链和有效期，双方派生对称密钥并校验握手，随后加密 HTTP 数据。HTTP/3 的 TLS 集成在 QUIC 中。失败应检查时间、证书链、SNI 和协议兼容，绝不能关闭证书校验绕过。",
+    "followUps": [
+      {
+        "question": "为什么数据传输用对称加密？",
+        "answer": "对称算法速度高，非对称密码主要用于身份认证和密钥协商。"
+      },
+      {
+        "question": "会话恢复有什么好处？",
+        "answer": "复用先前安全状态减少往返和计算，但需正确管理票据与重放风险。"
+      }
+    ],
+    "pitfalls": [
+      "握手细节随 TLS 版本不同，不能混用旧流程。"
+    ],
+    "tags": [
+      "HTTPS",
+      "TLS握手"
+    ],
+    "difficulty": "中等",
+    "contextNote": "以 TLS 1.3 为主，旧版握手阶段不同。"
+  },
+  {
+    "sourceId": "src-0249",
+    "shortAnswer": "Java 是托管、面向对象为主的跨平台语言，C 更接近系统和内存的直接控制。",
+    "fullAnswer": "Java 编译为字节码由 JVM 执行，具备 GC、运行时检查、丰富并发库和较强可移植性；C 通常编译为本机代码，允许指针运算和手动内存管理，控制力与可预测性强但更易出现越界和泄漏。Java 也可通过 JNI 调用原生代码，C 也能构建抽象。选型取决于性能、生态、硬件控制和安全维护成本。",
+    "followUps": [
+      {
+        "question": "Java 为什么仍可能内存泄漏？",
+        "answer": "对象虽由 GC 回收，但被无用强引用、监听器或 ThreadLocal 持有时仍不可达不到。"
+      },
+      {
+        "question": "C 一定比 Java 快吗？",
+        "answer": "不一定，JIT 可按运行热点优化，实际取决于工作负载和实现。"
+      }
+    ],
+    "pitfalls": [
+      "语言差异不应简化为解释型与编译型二分。"
+    ],
+    "tags": [
+      "Java",
+      "C语言"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0250",
+    "shortAnswer": "Java 常见垃圾回收算法有标记清除、复制、标记整理和分代收集。",
+    "fullAnswer": "标记清除回收不可达对象但产生碎片；复制把存活对象搬到另一空间，分配快但需额外空间；标记整理在标记后压缩存活对象，减少碎片但搬迁成本高；分代按对象生命周期组合算法。实际收集器还涉及并发标记、写屏障和 Region。选择算法要看停顿、吞吐和存活率，不能脱离收集器谈效果。",
+    "followUps": [
+      {
+        "question": "新生代为何适合复制？",
+        "answer": "多数对象很快死亡，需复制的存活对象少，回收成本低。"
+      },
+      {
+        "question": "并发标记为何需要写屏障？",
+        "answer": "应用线程仍在修改引用关系，需要记录变化以避免漏标活对象。"
+      }
+    ],
+    "pitfalls": [
+      "算法名称不能直接等同某个具体 GC 收集器。"
+    ],
+    "tags": [
+      "JVM",
+      "垃圾回收算法"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0251",
+    "shortAnswer": "Redis 除缓存外，还可用于计数、排行榜、限流、会话、消息流、地理位置和轻量协调。",
+    "fullAnswer": "原子命令与丰富类型使 Redis 能实现计数器、Sorted Set 排行榜、令牌桶、Session、Stream 消费组、GEO 查询和分布式锁。但它以内存为主，持久化、一致性和大 key 有边界；关键交易状态不应只依赖 Redis。每种用途都要设计过期、容量、故障降级和数据恢复，并评估是否应由更专门系统承担。",
+    "followUps": [
+      {
+        "question": "Redis 做消息队列有哪些限制？",
+        "answer": "List 功能简单，Pub/Sub 不持久；Stream 更完整但仍需处理积压、确认和故障恢复。"
+      },
+      {
+        "question": "Redis 做限流失败时怎么办？",
+        "answer": "按业务选择 fail-open 或 fail-closed，并监控脚本、网络与时钟影响。"
+      }
+    ],
+    "pitfalls": [
+      "通用工具不代表适合承载所有核心数据。"
+    ],
+    "tags": [
+      "Redis",
+      "应用场景"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0252",
+    "shortAnswer": "Redis 分布式锁应使用唯一持有者 token 和原子 SET key token NX PX ttl 获取。",
+    "fullAnswer": "释放时用 Lua 比较 token 后删除，防止误删他人锁；超长任务可续约，但必须确认仍是持有者。主从故障转移可能在锁未复制时出现双持有，因此强一致要求高的场景应使用协调系统或数据库锁，并引入 fencing token。业务动作需幂等，超时后先确认实际状态，不能仅相信客户端锁状态。",
+    "followUps": [
+      {
+        "question": "为什么不能直接 DEL 锁键？",
+        "answer": "自己的锁可能已过期并被别人获得，直接删除会破坏新持有者的锁。"
+      },
+      {
+        "question": "Redlock 是否适合所有场景？",
+        "answer": "存在模型与时钟假设争议，应依据一致性要求和故障模型评估。"
+      }
+    ],
+    "pitfalls": [
+      "分布式锁不是事务，不能自动回滚业务副作用。"
+    ],
+    "tags": [
+      "Redis",
+      "分布式锁"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0253",
+    "shortAnswer": "synchronized 的锁范围由修饰位置和锁对象决定，而不是由代码文本长度决定。",
+    "fullAnswer": "实例同步方法锁当前 this，静态同步方法锁对应 Class 对象，同步代码块锁括号中的对象。相同对象上的同步区域互斥，不同实例锁互不影响；静态锁与实例锁也不是同一个。锁范围应覆盖共享不变量的完整读改写，但尽量排除慢 IO 和无关计算。锁对象不能暴露给外部随意持有或更换。",
+    "followUps": [
+      {
+        "question": "两个实例调用同一实例同步方法会互斥吗？",
+        "answer": "不会，它们锁不同的 this，除非共享的实际资源还有其他同步。"
+      },
+      {
+        "question": "锁 String 常量有什么风险？",
+        "answer": "字符串池可能被无关代码共享，造成意外竞争甚至死锁。"
+      }
+    ],
+    "pitfalls": [
+      "只缩小代码块却破坏复合操作原子性会产生数据错误。"
+    ],
+    "tags": [
+      "synchronized",
+      "锁范围"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0254",
+    "shortAnswer": "准备上海银行 Java 面试应把 Java 后端基础与金融系统的正确性、安全和审计要求结合。",
+    "fullAnswer": "通用复习包括并发、JVM、Spring、MySQL、Redis、消息、网络和 Linux；金融场景还要理解事务、幂等、权限、数据脱敏、对账和灾备。仅有文章标题，无法判断具体团队题型，应依据 JD 调整。项目回答需区分个人职责和团队成果，用日志、指标或演练证明可靠性，未知领域明确假设。",
+    "followUps": [
+      {
+        "question": "金融接口为什么需要审计日志？",
+        "answer": "用于追溯谁在何时以什么权限执行了什么操作，并支持合规与事故调查。"
+      },
+      {
+        "question": "缓存是否能作为账户余额真相源？",
+        "answer": "通常不应，核心余额需由具备事务与审计能力的存储维护。"
+      }
+    ],
+    "pitfalls": [
+      "不要为了贴近银行场景虚构处理过资金数据。"
+    ],
+    "tags": [
+      "企业面试",
+      "银行系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按银行 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0255",
+    "shortAnswer": "深信服 Java 面试准备应以 JD 为准，兼顾后端基础、网络安全意识和故障排查能力。",
+    "fullAnswer": "先覆盖 Java 集合并发、JVM、Spring、数据库、缓存、网络协议和 Linux；安全相关团队可能进一步关注认证、输入校验、日志与网络诊断，但不能由公司名断定。简历项目要说明威胁边界、异常处理、容量和个人贡献。对安全问题不确定时先建立攻击模型，避免给出关闭校验等危险建议。",
+    "followUps": [
+      {
+        "question": "安全题如何组织答案？",
+        "answer": "先定义资产、信任边界、攻击者能力，再给预防、检测和响应措施。"
+      },
+      {
+        "question": "网络故障如何保留证据？",
+        "answer": "记录时间、连接指标、抓包或 Trace，并避免先重启导致现场消失。"
+      }
+    ],
+    "pitfalls": [
+      "公开面经可能过时，不能替代当前岗位信息。"
+    ],
+    "tags": [
+      "企业面试",
+      "网络安全"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0256",
+    "shortAnswer": "淘宝 Java 面试准备通常需要扎实基础、分布式系统思维和大规模业务下的工程取舍。",
+    "fullAnswer": "在缺少岗位信息时，应复习并发、JVM、Spring、MySQL、Redis、MQ、网络和 Linux，练习秒杀、订单、缓存热点、消息一致性等系统设计，但不假设是固定题。项目需量化流量、延迟、故障和优化证据，算法题要能编码测试。对规模化方案先给简单基线，再解释何时需要分片、异步或降级。",
+    "followUps": [
+      {
+        "question": "秒杀系统最重要的边界是什么？",
+        "answer": "库存正确、请求削峰、重复下单幂等和失败补偿，而非单纯追求 QPS。"
+      },
+      {
+        "question": "如何回答没做过超大规模？",
+        "answer": "基于已做规模说明瓶颈，再推演扩展方案并明确是假设。"
+      }
+    ],
+    "pitfalls": [
+      "不要用大厂架构名词掩盖个人经验边界。"
+    ],
+    "tags": [
+      "企业面试",
+      "分布式系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按电商 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0257",
+    "shortAnswer": "腾讯 Java 面试准备应围绕基础深度、网络与分布式知识、项目真实性和编码能力。",
+    "fullAnswer": "通用清单含 Java 集合并发、JVM、Spring、MySQL、Redis、MQ、TCP/HTTP、Linux 和算法。不同事业群差异大，不能从公司名推断题型；应把 JD 技术词映射到原理、项目和故障三类准备。回答项目时给出约束、取舍、验证和复盘，遇到未实践技术明确说明理论理解。",
+    "followUps": [
+      {
+        "question": "网络题怎样回答得有层次？",
+        "answer": "按协议目标、状态流程、异常重传、性能与观测依次说明。"
+      },
+      {
+        "question": "项目被追问容量时怎么办？",
+        "answer": "给真实峰值和测量方法，不清楚就说明未统计并提出应如何补证。"
+      }
+    ],
+    "pitfalls": [
+      "不要背诵未经验证的面经答案。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0258",
+    "shortAnswer": "腾讯云智 Java 面试应按具体云与行业团队 JD 准备基础、云原生和可靠性能力。",
+    "fullAnswer": "除了 Java、并发、JVM、Spring、数据库、缓存与 MQ，可补充容器、Kubernetes、服务治理和可观测性；但文章标题未说明岗位，不能声称必考。项目应能解释部署拓扑、资源限制、故障恢复、SLA 和安全权限。云场景回答尤其要区分控制面与数据面，并用指标证明扩缩容或优化效果。",
+    "followUps": [
+      {
+        "question": "容器化项目最常见追问是什么？",
+        "answer": "资源限制、健康检查、优雅停机、配置密钥和日志监控如何处理。"
+      },
+      {
+        "question": "云服务故障应如何降级？",
+        "answer": "按依赖关键度设置超时、熔断、缓存或只读模式，并避免级联重试。"
+      }
+    ],
+    "pitfalls": [
+      "不要把会写 Dockerfile 等同于掌握云原生运维。"
+    ],
+    "tags": [
+      "企业面试",
+      "云原生"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按云方向 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0259",
+    "shortAnswer": "Docker 主要依靠 Linux namespaces 隔离视图、cgroups 限制资源，并用分层文件系统组织镜像。",
+    "fullAnswer": "容器进程仍共享宿主机内核；PID、network、mount、UTS、IPC 和 user namespace 提供不同视图，cgroups 控制 CPU、内存与 IO，overlayfs 等联合挂载实现镜像只读层和容器写层。运行时通过 OCI 规范创建进程。隔离弱于虚拟机，需最小权限、只读文件系统、镜像扫描和 seccomp，并持续修补宿主内核与运行时漏洞。",
+    "followUps": [
+      {
+        "question": "容器与虚拟机最大差异是什么？",
+        "answer": "容器共享宿主内核，虚拟机运行独立客体内核，因此隔离和开销不同。"
+      },
+      {
+        "question": "容器内存超限会怎样？",
+        "answer": "cgroup 可能触发 OOM kill，应监控限制、工作集和退出原因。"
+      }
+    ],
+    "pitfalls": [
+      "root 容器并不天然安全，应避免特权模式。"
+    ],
+    "tags": [
+      "Docker",
+      "容器"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0260",
+    "shortAnswer": "准备同程旅行 Java 面试应结合通用后端基础与订单、库存、价格等交易场景推演。",
+    "fullAnswer": "复习并发、JVM、Spring、MySQL、Redis、MQ、网络与 Linux；业务题可练习库存一致、订单超时、重复请求、缓存更新和流量高峰。标题未说明团队与轮次，所以这些只是通用准备。项目回答要提供个人贡献、故障处理和指标，设计题先澄清一致性、峰值、延迟与恢复目标。",
+    "followUps": [
+      {
+        "question": "库存扣减怎样避免超卖？",
+        "answer": "通过数据库条件更新、原子脚本或串行队列，并配合订单状态和补偿。"
+      },
+      {
+        "question": "价格缓存过期怎么办？",
+        "answer": "显示时标注有效期，下单时由权威服务再次校验，避免缓存成为最终结算依据。"
+      }
+    ],
+    "pitfalls": [
+      "不要假设旅游交易与普通电商完全相同。"
+    ],
+    "tags": [
+      "企业面试",
+      "交易系统"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0261",
+    "shortAnswer": "微众银行 Java 面试准备应突出分布式事务、数据安全、高可用和 Java 基础。",
+    "fullAnswer": "通用技术包括并发、JVM、Spring、数据库、Redis、MQ、网络和 Linux；银行场景还应理解幂等状态机、审计、对账、容灾与最小权限。文章标题无法证明具体考点，应以 JD 为准。项目中不能把团队能力包装为个人成果，风险操作和恢复方案需说明验证方式。",
+    "followUps": [
+      {
+        "question": "异步账务如何保证最终正确？",
+        "answer": "用唯一业务号、事务消息或 outbox、幂等消费和定期对账补偿形成闭环。"
+      },
+      {
+        "question": "如何描述容灾能力？",
+        "answer": "给出故障域、复制方式、切换条件、RPO/RTO 和演练结果。"
+      }
+    ],
+    "pitfalls": [
+      "金融系统不能仅靠缓存或消息的“基本可靠”假设。"
+    ],
+    "tags": [
+      "企业面试",
+      "金融后端"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按银行 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0262",
+    "shortAnswer": "消息幂等是同一业务事件被处理多次时，最终状态与处理一次相同。",
+    "fullAnswer": "重复来自生产重试、消费成功后提交失败、重平衡或人工补发。实现可用稳定事件 ID、数据库唯一约束、幂等记录、条件状态转移或业务天然幂等；处理结果与幂等标记要尽量同事务。跨系统副作用需查询确认和补偿。幂等表应处理并发、过期和失败中状态，并监控重复消息。",
+    "followUps": [
+      {
+        "question": "为什么仅在 Redis 记已消费可能不可靠？",
+        "answer": "Redis 写入与业务数据库更新不是原子，任一侧失败会造成跳过或重复。"
+      },
+      {
+        "question": "哪些操作天然幂等？",
+        "answer": "按目标值覆盖通常幂等，累加、扣款和发送通知通常不是。"
+      }
+    ],
+    "pitfalls": [
+      "幂等键不能使用每次重试都会变化的消息 ID。"
+    ],
+    "tags": [
+      "消息队列",
+      "幂等"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0263",
+    "shortAnswer": "准备唯品会 Java 面试应围绕 Java 基础、电商交易、高并发和项目工程能力。",
+    "fullAnswer": "通用复习并发、JVM、Spring、MySQL、Redis、MQ、网络、Linux 与算法；电商场景可练库存、订单、促销、缓存热点和消息一致性，但实际题型取决于团队 JD。回答系统设计先给规模和一致性假设，再说明限流、降级与补偿。项目需有可验证指标，不能把了解的方案说成上线经历。",
+    "followUps": [
+      {
+        "question": "促销热点如何保护数据库？",
+        "answer": "前置限流、缓存或原子库存、请求排队，并保持最终订单校验。"
+      },
+      {
+        "question": "消息积压时优先做什么？",
+        "answer": "确认生产与消费速率、下游瓶颈和消息时效，再扩容或降级。"
+      }
+    ],
+    "pitfalls": [
+      "不要只讲峰值成功路径而忽略退款与补偿。"
+    ],
+    "tags": [
+      "企业面试",
+      "电商后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0264",
+    "shortAnswer": "准备蔚来汽车 Java 面试应结合后端基础、实时服务可靠性和数据安全意识。",
+    "fullAnswer": "先复习 Java、并发、JVM、Spring、MySQL、Redis、消息、网络与容器；若岗位涉及车联网，再关注设备连接、消息顺序、离线重连和权限，但不能由公司名臆测。项目回答要给出容量、时延、故障和恢复证据，对安全关键场景优先保守降级与审计。正式范围仍由 JD 与面试沟通决定。",
+    "followUps": [
+      {
+        "question": "设备重复上报怎样处理？",
+        "answer": "使用设备 ID 与序列号或事件 ID 去重，并处理乱序和重放。"
+      },
+      {
+        "question": "远程指令为什么要强认证？",
+        "answer": "错误或伪造指令可能产生实体风险，需要设备身份、授权、签名和审计。"
+      }
+    ],
+    "pitfalls": [
+      "不要把互联网普通消息模型直接套用到安全关键控制。"
+    ],
+    "tags": [
+      "企业面试",
+      "车联网"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按汽车相关 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0265",
+    "shortAnswer": "准备虾皮 Java 面试应兼顾 Java 后端基础、跨区域电商、高并发和项目深挖。",
+    "fullAnswer": "通用范围包括集合并发、JVM、Spring、数据库、缓存、MQ、网络与算法；跨境或多区域场景可练时区、货币、库存、延迟与容灾，但不能假定所有团队相同。系统设计要明确区域一致性和故障范围，项目回答提供量化指标和真实职责。英语表达要求也应按岗位信息确认。",
+    "followUps": [
+      {
+        "question": "多区域写入最先确定什么？",
+        "answer": "数据主权、写入归属、一致性要求和区域故障时的业务策略。"
+      },
+      {
+        "question": "跨境金额如何避免精度问题？",
+        "answer": "使用明确币种和最小货币单位或高精度十进制，禁止浮点计算。"
+      }
+    ],
+    "pitfalls": [
+      "不要为了国际化场景虚构跨区域生产经验。"
+    ],
+    "tags": [
+      "企业面试",
+      "跨区域系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0266",
+    "shortAnswer": "小红书 Java 面试准备应覆盖后端基础、内容与推荐链路、高并发及项目可观测性。",
+    "fullAnswer": "在没有具体 JD 时，复习 Java 并发、JVM、Spring、MySQL、Redis、MQ、网络和算法；内容业务可推演 Feed、互动计数、审核和热点缓存，但不能视为固定题。项目应说明数据规模、缓存一致、异步链路和故障处理，设计题还需考虑隐私、安全与内容权限，并准备删除或权限变更后的索引同步方案。",
+    "followUps": [
+      {
+        "question": "互动计数如何兼顾性能与准确性？",
+        "answer": "可异步聚合并展示近实时值，关键结算或约束使用权威存储和对账。"
+      },
+      {
+        "question": "Feed 缓存失效怎么处理？",
+        "answer": "按用户活跃度和时间线策略分层，限制重建成本并允许降级。"
+      }
+    ],
+    "pitfalls": [
+      "不要忽略删除、权限变更后缓存和索引的同步。"
+    ],
+    "tags": [
+      "企业面试",
+      "内容系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按内容方向 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0267",
+    "shortAnswer": "常用 Git 操作覆盖查看状态、分支提交、同步、比较、恢复和协作。",
+    "fullAnswer": "日常有 status、diff、add、commit、log、switch、branch、fetch、pull、push、merge、rebase、cherry-pick、stash 和 tag。排错常用 show、blame、bisect、reflog。团队协作应小步提交、先 fetch 再判断合并方式，公开分支谨慎 rebase；恢复优先 revert，避免对他人历史强推。任何 reset 或 clean 前先确认目标和备份，提交前还应检查暂存差异避免带入密钥或无关文件，并写清提交目的与验证结果。",
+    "followUps": [
+      {
+        "question": "merge 与 rebase 如何选择？",
+        "answer": "merge 保留分叉历史，rebase 线性但重写提交；共享提交通常不随意 rebase。"
+      },
+      {
+        "question": "误删提交如何找回？",
+        "answer": "在对象未清理前用 reflog 找到旧 HEAD，再建分支或 cherry-pick。"
+      }
+    ],
+    "pitfalls": [
+      "不要在未检查状态时执行 hard reset 或 clean。"
+    ],
+    "tags": [
+      "Git",
+      "版本控制"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0268",
+    "shortAnswer": "多线程能利用多核、隐藏 IO 等待并提升响应性，但会引入同步和调度成本。",
+    "fullAnswer": "CPU 任务可并行使用多核，IO 任务可在一部分等待时让其他任务运行，服务器也能并发处理请求。代价是竞态、死锁、上下文切换、缓存失效和调试困难。线程数量要受 CPU、阻塞比与下游容量约束，共享状态优先不可变或消息传递，并通过压测验证吞吐与尾延迟。",
+    "followUps": [
+      {
+        "question": "多线程一定提升单个任务速度吗？",
+        "answer": "不一定，任务不可分、规模小或同步成本高时反而更慢。"
+      },
+      {
+        "question": "IO 密集线程数如何估算？",
+        "answer": "可按等待与计算比例初估，但必须受连接池、内存和下游限额约束。"
+      }
+    ],
+    "pitfalls": [
+      "吞吐提升不能以数据错误或不可控排队为代价。"
+    ],
+    "tags": [
+      "多线程",
+      "并发"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0269",
+    "shortAnswer": "反射是在运行时检查并操作类、方法、字段和构造器元数据的机制。",
+    "fullAnswer": "Java 通过 Class、Method、Field、Constructor 等 API 动态实例化、调用和读取注解，框架用它实现依赖注入、序列化、ORM 和插件。反射降低编译期类型保证，可能有访问、性能和模块封装限制；应缓存元数据、控制白名单并处理异常。新 JDK 强封装后访问内部成员限制更严格，可考虑 MethodHandle。",
+    "followUps": [
+      {
+        "question": "反射为什么适合框架？",
+        "answer": "框架事先不知道业务类型，运行时元数据让它按配置或注解通用处理。"
+      },
+      {
+        "question": "setAccessible 是否永远可用？",
+        "answer": "不是，模块系统和安全策略可能禁止深反射，版本升级需验证。"
+      }
+    ],
+    "pitfalls": [
+      "反射输入若来自外部必须限制可加载类型和可调用成员。"
+    ],
+    "tags": [
+      "Java反射",
+      "Class"
+    ],
+    "difficulty": "中等",
+    "contextNote": "访问限制以目标 JDK 与模块配置为准。"
+  },
+  {
+    "sourceId": "src-0270",
+    "shortAnswer": "类加载经历加载、验证、准备、解析和初始化，双亲委派让父加载器优先尝试加载。",
+    "fullAnswer": "加载读取字节码并生成 Class，验证保证格式与安全，准备分配静态字段默认值，解析把符号引用转直接引用，初始化执行类初始化方法。双亲委派从自定义加载器向父级请求，避免核心类被重复或伪造。SPI、容器和模块系统可能采用线程上下文或子优先策略。排障需关注类加载器身份与版本冲突。",
+    "followUps": [
+      {
+        "question": "同名类一定是同一个类型吗？",
+        "answer": "类名相同但定义它们的 ClassLoader 不同，JVM 视为不同类型。"
+      },
+      {
+        "question": "什么时候触发类初始化？",
+        "answer": "首次主动使用如 new、访问非编译期常量静态字段或反射调用时。"
+      }
+    ],
+    "pitfalls": [
+      "不要把委派模型说成所有加载器都绝对遵循。"
+    ],
+    "tags": [
+      "类加载",
+      "双亲委派"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体加载器层级随 JDK 版本变化。"
+  },
+  {
+    "sourceId": "src-0271",
+    "shortAnswer": "死锁由互斥、持有并等待、不可剥夺和循环等待四个条件共同形成。",
+    "fullAnswer": "解决可破坏任一条件：按全局顺序获取多把锁、使用 tryLock 超时后释放、缩小锁范围或改用无共享设计。排查用 jstack/jcmd 查找 Java-level deadlock，并结合数据库与分布式锁，因为 JVM 工具看不到全部外部等待。修复后应做并发压力与故障测试，而不是仅重启进程。",
+    "followUps": [
+      {
+        "question": "统一锁顺序如何避免死锁？",
+        "answer": "所有线程按同一可比较顺序拿锁，就无法形成环形等待。"
+      },
+      {
+        "question": "超时是否真正消除死锁？",
+        "answer": "能让等待退出，但还需正确回滚部分操作，否则产生数据不一致。"
+      }
+    ],
+    "pitfalls": [
+      "不要随意用更大超时掩盖锁顺序问题。"
+    ],
+    "tags": [
+      "死锁",
+      "Java并发"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0272",
+    "shortAnswer": "准备小米 Java 面试应依据具体业务线，系统复习后端基础并准备项目深挖。",
+    "fullAnswer": "通用内容包括集合、并发、JVM、Spring、MySQL、Redis、MQ、网络、Linux 和算法；若岗位涉及 IoT、云或电商，再按 JD 增补协议、设备或交易知识。公司业务广泛，文章标题不足以推断固定题型。每个项目需讲清个人职责、指标、失败与取舍，对未落地技术明确为方案思考。",
+    "followUps": [
+      {
+        "question": "IoT 场景常见可靠性问题是什么？",
+        "answer": "设备离线、乱序重试、重复上报、版本兼容和身份认证。"
+      },
+      {
+        "question": "面试复习如何避免范围失控？",
+        "answer": "优先 JD 必需项和简历技术，次优先通用高频，最后补业务扩展。"
+      }
+    ],
+    "pitfalls": [
+      "不要把所有小米业务线视为同一技术栈。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0273",
+    "shortAnswer": "Java 并发依赖 Java 内存模型、happens-before、锁、原子变量和并发容器保证可见性与原子性。",
+    "fullAnswer": "线程各自执行但共享堆，编译器和 CPU 可重排；JMM 定义 volatile、监视器、线程启动终止等先行发生规则。synchronized/Lock 保护复合不变量，CAS 与原子类适合无锁更新，并发容器封装常见结构。设计应减少共享可变状态，避免忙等与无界任务，用 jcstress 或压力测试覆盖竞态。",
+    "followUps": [
+      {
+        "question": "volatile 能保证 i++ 原子吗？",
+        "answer": "不能，它保证可见性和特定顺序，读改写仍是多个步骤。"
+      },
+      {
+        "question": "CAS 有什么典型问题？",
+        "answer": "可能自旋浪费 CPU、发生 ABA，并在高竞争下退化。"
+      }
+    ],
+    "pitfalls": [
+      "线程安全必须针对完整业务不变量定义。"
+    ],
+    "tags": [
+      "Java并发",
+      "JMM"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0274",
+    "shortAnswer": "Kafka 偏高吞吐日志流与生态，RocketMQ 更强调业务消息能力和灵活队列模型。",
+    "fullAnswer": "Kafka 以分区追加日志、消费者组和流处理生态见长，适合大数据管道；RocketMQ 提供延迟、事务、顺序与过滤等业务消息能力，Java 生态常见。两者都能高可用，但语义、运维、存储和客户端差异随版本变化。选型应实测吞吐、延迟、积压恢复、消息大小和团队运维，不能只凭功能表。",
+    "followUps": [
+      {
+        "question": "顺序消息的边界是什么？",
+        "answer": "通常只能保证同一分区或队列内顺序，跨分区不提供全局顺序。"
+      },
+      {
+        "question": "积压场景如何比较？",
+        "answer": "在真实消息大小和消费者速度下测试磁盘、恢复时间和对在线流量影响。"
+      }
+    ],
+    "pitfalls": [
+      "具体功能以所选版本为准，不能使用过时对比。"
+    ],
+    "tags": [
+      "Kafka",
+      "RocketMQ"
+    ],
+    "difficulty": "中等",
+    "contextNote": "版本和部署模式会影响能力与性能。"
+  },
+  {
+    "sourceId": "src-0275",
+    "shortAnswer": "TCP 四次挥手分别让双方独立关闭各自发送方向，以完成全双工连接释放。",
+    "fullAnswer": "主动方发送 FIN 进入 FIN_WAIT_1，被动方 ACK 后主动方进入 FIN_WAIT_2；被动方处理完剩余数据再发 FIN，主动方 ACK 后进入 TIME_WAIT，被动方收到 ACK 关闭。TIME_WAIT 通常等待 2MSL，确保最后 ACK 可重传并让旧报文过期。异常断网、半关闭和 RST 是不同路径，排障要结合状态与抓包。",
+    "followUps": [
+      {
+        "question": "为什么不能通常三次完成？",
+        "answer": "被动方收到 FIN 只表示对方不再发送，自己可能仍有数据，ACK 与 FIN 不一定同时发。"
+      },
+      {
+        "question": "TIME_WAIT 为什么在主动方？",
+        "answer": "主动方负责重发最后 ACK，并等待旧连接报文消失。"
+      }
+    ],
+    "pitfalls": [
+      "大量 TIME_WAIT 不应直接通过危险内核参数粗暴消除。"
+    ],
+    "tags": [
+      "TCP",
+      "四次挥手"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0276",
+    "shortAnswer": "二进制转十六进制可从右向左每四位分组，每组映射为一个十六进制数字。",
+    "fullAnswer": "因为 16 等于 2 的四次方，四个二进制位恰好表示 0 到 15。例如 11010110 分为 1101 和 0110，对应 D6；最左组不足四位时补零。代码中也可反复取低四位并映射 0-9、A-F，再右移。负数转换需先明确位宽和补码，否则结果没有唯一长度；转换完成后可反向展开每个十六进制位核对。",
+    "followUps": [
+      {
+        "question": "二进制 101101 转十六进制是多少？",
+        "answer": "左侧补成 0010 1101，两组分别是 2 和 D，所以是 0x2D。"
+      },
+      {
+        "question": "Java 如何输出整数十六进制？",
+        "answer": "可用 Integer.toHexString，负数会按二进制补码位模式输出。"
+      }
+    ],
+    "pitfalls": [
+      "题目中的“16机制”按“十六进制”理解。"
+    ],
+    "tags": [
+      "进制转换",
+      "二进制"
+    ],
+    "difficulty": "基础",
+    "contextNote": "题目存在错别字，按二进制转十六进制回答。"
+  },
+  {
+    "sourceId": "src-0277",
+    "shortAnswer": "准备小鹏汽车 Java 面试应结合后端基础、车联网可靠性和安全边界，并以 JD 校准范围。",
+    "fullAnswer": "通用复习 Java 并发、JVM、Spring、数据库、Redis、MQ、网络、Linux 与容器；若岗位关联车辆或设备，再练习连接管理、消息乱序、OTA 状态与强认证。文章标题缺少岗位和轮次，不能推断固定流程。项目回答要给真实指标、故障恢复和个人贡献，涉及实体控制时优先安全降级。",
+    "followUps": [
+      {
+        "question": "OTA 服务设计最关心什么？",
+        "answer": "包签名、版本兼容、灰度、断点续传、失败回滚和设备状态审计。"
+      },
+      {
+        "question": "车端离线时命令怎么办？",
+        "answer": "按命令时效持久化或丢弃，重连后验证版本和权限，避免执行过期指令。"
+      }
+    ],
+    "pitfalls": [
+      "不要把普通互联网容错直接等同安全关键系统要求。"
+    ],
+    "tags": [
+      "企业面试",
+      "车联网"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按汽车 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0278",
+    "shortAnswer": "ARM 是一种精简指令集架构家族，强调能效并广泛用于移动、嵌入式和服务器。",
+    "fullAnswer": "ARM 定义指令集与执行状态，具体芯片由不同厂商实现；常见 AArch64 是 64 位架构。相比 x86，指令编码、内存模型、SIMD 和生态不同，但性能不能仅按架构标签判断。Java 依靠 JVM 屏蔽多数差异，JNI、本地库、容器镜像和并发内存屏障仍需适配。部署前应在目标硬件测试兼容、吞吐和能耗。",
+    "followUps": [
+      {
+        "question": "ARM 与某个芯片品牌是同一概念吗？",
+        "answer": "不是，ARM 提供架构和授权，厂商设计具体核心与 SoC。"
+      },
+      {
+        "question": "Java 程序迁移 ARM 要检查什么？",
+        "answer": "JDK 架构、JNI 库、镜像多架构支持、性能与监控工具兼容。"
+      }
+    ],
+    "pitfalls": [
+      "不要笼统断言 ARM 一定比 x86 快或省电。"
+    ],
+    "tags": [
+      "ARM",
+      "计算机体系结构"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0279",
+    "shortAnswer": "Java byte 的 -1 使用 8 位二进制补码 11111111 表示。",
+    "fullAnswer": "byte 范围是 -128 到 127。负数补码可由绝对值二进制按位取反再加一：1 为 00000001，取反 11111110，加一得到 11111111。运算时 byte 通常提升为 int 并进行符号扩展，所以打印十六进制可能看到 ffffffff；若要无符号值可用 b & 0xff 得到 255。网络协议解析时尤其要明确有符号提升与掩码顺序。",
+    "followUps": [
+      {
+        "question": "-128 的 byte 补码是什么？",
+        "answer": "10000000，它没有可表示的正 128 对应值。"
+      },
+      {
+        "question": "为什么 byte 加法结果要强转？",
+        "answer": "Java 的二元数值提升会把 byte、short、char 提升为 int。"
+      }
+    ],
+    "pitfalls": [
+      "必须说明位宽，否则 -1 的补码可写成任意个 1。"
+    ],
+    "tags": [
+      "补码",
+      "Java基础"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按 Java 8 位 byte 语境回答。"
+  },
+  {
+    "sourceId": "src-0280",
+    "shortAnswer": "准备携程 Java 面试应围绕通用后端、旅游交易链路、稳定性和项目深挖展开。",
+    "fullAnswer": "复习集合并发、JVM、Spring、MySQL、Redis、MQ、HTTP、Linux 和算法；旅游系统可练库存、价格、订单、超时和多供应商降级，但只是通用推演。公司团队众多，应以 JD 判断重点。项目回答需说明真实流量、依赖故障、补偿和指标，设计时明确强一致边界与用户可接受降级。",
+    "followUps": [
+      {
+        "question": "供应商接口超时如何处理？",
+        "answer": "设置分级超时、熔断和备用源，返回可解释状态，避免无限重试放大故障。"
+      },
+      {
+        "question": "订单与支付不一致怎么恢复？",
+        "answer": "使用状态机、异步查询、幂等更新和对账补偿。"
+      }
+    ],
+    "pitfalls": [
+      "不要把缓存结果当作最终可售或结算依据。"
+    ],
+    "tags": [
+      "企业面试",
+      "旅游交易"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0281",
+    "shortAnswer": "准备招商银行 Java 面试应突出 Java 基础、金融交易正确性、权限审计和灾备意识。",
+    "fullAnswer": "通用内容含并发、JVM、Spring、MySQL、Redis、MQ、网络和 Linux；金融场景还需掌握事务、幂等、对账、数据脱敏和高可用。文章标题不含岗位信息，不能推定具体题型。项目回答必须如实区分个人与团队贡献，给出异常路径和验证证据，并避免用最终一致处理不可接受的资金风险。",
+    "followUps": [
+      {
+        "question": "敏感数据日志如何处理？",
+        "answer": "结构化脱敏、最小字段、访问控制和留存周期，禁止记录凭证与完整账号。"
+      },
+      {
+        "question": "灾备切换如何验证？",
+        "answer": "定期演练，量化 RPO/RTO，并验证数据一致、依赖和回切流程。"
+      }
+    ],
+    "pitfalls": [
+      "不能把通过面试准备等同了解银行内部实现。"
+    ],
+    "tags": [
+      "企业面试",
+      "银行后端"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按银行 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0282",
+    "shortAnswer": "招银网络 Java 面试准备应以技术岗位描述为中心，覆盖后端基础、金融可靠性和工程规范。",
+    "fullAnswer": "建议复习 Java 并发、JVM、Spring、数据库、缓存、消息、网络、Linux、测试与容器；银行技术场景再补事务、幂等、审计、灾备和权限。标题无法提供轮次或团队细节，故不臆测题库。简历项目要准备架构、个人决策、失败处理和量化效果，对不熟悉系统如实说明。",
+    "followUps": [
+      {
+        "question": "代码质量如何在面试中体现？",
+        "answer": "说明测试分层、评审、静态检查、发布回滚和故障复盘，而非只谈设计模式。"
+      },
+      {
+        "question": "交易消息为何要对账？",
+        "answer": "分布式故障可能产生遗漏或重复，对账是发现并修复最终偏差的最后防线。"
+      }
+    ],
+    "pitfalls": [
+      "不要只讲成功路径而忽略回滚和审计。"
+    ],
+    "tags": [
+      "企业面试",
+      "金融工程"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按银行技术 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0283",
+    "shortAnswer": "Java 与 C++ 都能面向对象，但在内存管理、运行时、泛型和底层控制上差异明显。",
+    "fullAnswer": "Java 通常由 JVM 执行并用 GC 管理堆，强调安全检查和跨平台；C++ 编译成本机代码，支持值语义、指针、RAII、运算符重载和模板，资源生命周期控制更直接。Java 泛型多为类型擦除，C++ 模板在编译期实例化。性能、延迟和生态需实测，现代两者都能构建高性能系统。",
+    "followUps": [
+      {
+        "question": "RAII 与 GC 的区别是什么？",
+        "answer": "RAII 按对象生命周期确定性释放资源，GC 主要回收内存且时间不确定。"
+      },
+      {
+        "question": "Java 是否完全没有手动资源管理？",
+        "answer": "文件、连接等仍需 try-with-resources 显式、确定性关闭。"
+      }
+    ],
+    "pitfalls": [
+      "不要简单把 Java 称为解释型、C++ 称为绝对更快。"
+    ],
+    "tags": [
+      "Java",
+      "C++"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0284",
+    "shortAnswer": "进程是资源分配与隔离单位，线程是进程内的执行调度单位。",
+    "fullAnswer": "不同进程有独立虚拟地址空间和资源表，隔离强，通信需 IPC；同进程线程共享堆、代码和文件描述符，但各有栈、寄存器和程序计数器，创建切换通常更轻。共享带来通信便利也带来竞态和崩溃影响。选择多进程还是多线程要权衡隔离、共享、部署和故障边界。",
+    "followUps": [
+      {
+        "question": "线程崩溃一定不影响其他线程吗？",
+        "answer": "未捕获 Java 异常通常只终止该线程，但 native 崩溃可能导致整个进程退出。"
+      },
+      {
+        "question": "进程间有哪些通信方式？",
+        "answer": "管道、消息队列、共享内存、socket、信号等，各有同步与拷贝成本。"
+      }
+    ],
+    "pitfalls": [
+      "线程轻量不代表可以无限创建。"
+    ],
+    "tags": [
+      "操作系统",
+      "进程",
+      "线程"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0285",
+    "shortAnswer": "Linux 可用 top、ps、pidstat 或 smem 查看各进程内存，并区分 RSS、VSZ 与共享比例。",
+    "fullAnswer": "top/htop 实时观察，ps -eo pid,comm,rss,vsz,%mem --sort=-rss 给出快照，pidstat -r 跟踪变化；smem 可报告 PSS，更合理分摊共享页。容器环境还要查看 cgroup memory.current 与限制。一次数值不能证明泄漏，应持续采样并结合 page cache、映射和业务负载，同时记录进程启动时间和发布变更，确认增长是否会在低峰回落。",
+    "followUps": [
+      {
+        "question": "RSS 与 VSZ 有何区别？",
+        "answer": "VSZ 是虚拟地址空间总量，RSS 是当前驻留物理内存，二者都不等于独占内存。"
+      },
+      {
+        "question": "PSS 为什么更适合汇总？",
+        "answer": "它按共享进程数分摊共享页，避免把同一物理页重复计算。"
+      }
+    ],
+    "pitfalls": [
+      "不要仅凭 %MEM 直接杀进程，应先确认业务和变化趋势。"
+    ],
+    "tags": [
+      "Linux",
+      "内存排障"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0286",
+    "shortAnswer": "查看内存占用前十可让 ps 按 RSS 或 %MEM 排序后取前十。",
+    "fullAnswer": "例如 ps -eo pid,comm,rss,%mem --sort=-rss | head -n 11，第一行是表头；也可在 top 中按 M 排序。RSS 统计包含共享页的重复视角，若需更准确的独占与分摊可用 smem 的 USS/PSS。命令输出是瞬时快照，应在问题窗口多次记录，并在容器内外分别确认 cgroup 口径，再结合进程职责决定是否异常。",
+    "followUps": [
+      {
+        "question": "为什么 head 取 11 行？",
+        "answer": "ps 输出包含一行标题，后面十行才是进程。"
+      },
+      {
+        "question": "按 %MEM 与 RSS 排序有区别吗？",
+        "answer": "同一主机通常顺序接近，RSS 是绝对值，%MEM 相对物理内存。"
+      }
+    ],
+    "pitfalls": [
+      "命令结果需保留时间与单位，避免误读 KB。"
+    ],
+    "tags": [
+      "Linux",
+      "ps"
+    ],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0287",
+    "shortAnswer": "Java 进程内存要联合操作系统指标、JVM Native Memory Tracking 和堆/线程信息分析。",
+    "fullAnswer": "堆可用 jcmd PID GC.heap_info、jstat 或监控查看已提交与已用；线程栈总量近似线程数乘 -Xss，但实际提交与本地开销不同。开启 NMT 后可用 jcmd PID VM.native_memory summary 看堆、类、线程、代码缓存等分类。RSS 还含直接内存、mmap 和共享库，不能用 RSS 减堆简单得出栈，还应与操作系统映射和容器限制交叉核对。",
+    "followUps": [
+      {
+        "question": "NMT 能否事后临时完整开启？",
+        "answer": "通常需 JVM 启动参数启用，详细能力和开销取决于 JDK。"
+      },
+      {
+        "question": "如何估算单线程栈上限？",
+        "answer": "查看 -Xss 或 VM.flags，再乘线程数只是保守上限，不是实际物理占用。"
+      }
+    ],
+    "pitfalls": [
+      "线上诊断要控制 jmap 等可能造成停顿的工具。"
+    ],
+    "tags": [
+      "JVM",
+      "内存"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "NMT 命令与输出以目标 JDK 版本为准。"
+  },
+  {
+    "sourceId": "src-0288",
+    "shortAnswer": "JVM 内存调优常用 GC 日志、jstat、jcmd、JFR、async-profiler、heap dump 与 MAT。",
+    "fullAnswer": "先用系统与应用指标确认趋势，再用 GC 日志看分配和暂停，jstat/jcmd 获取堆与类信息，JFR 低开销记录分配、锁和线程事件，async-profiler 分析 CPU/分配，本地导出的 heap dump 用 MAT 查支配树和泄漏路径。工具会有开销，尤其大堆转储可能 STW 和占满磁盘；调优必须以业务延迟和吞吐回归。",
+    "followUps": [
+      {
+        "question": "jstack 适合分析什么？",
+        "answer": "线程阻塞、死锁和热点栈线索，不直接给出对象内存归因。"
+      },
+      {
+        "question": "MAT 中支配树有什么用？",
+        "answer": "找出保留大量对象的上层引用者，帮助定位为何对象不能回收。"
+      }
+    ],
+    "pitfalls": [
+      "先测量再改参数，不能把扩大堆当作默认修复。"
+    ],
+    "tags": [
+      "JVM",
+      "调优工具"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "工具可用性和参数以目标 JDK 版本为准。"
+  },
+  {
+    "sourceId": "src-0289",
+    "shortAnswer": "工商银行 Java 面试准备应重视语言基础、数据库事务、系统可靠性、安全合规与项目真实性。",
+    "fullAnswer": "建议覆盖 Java 并发、JVM、Spring、MySQL、Redis、消息、网络、Linux 与算法；银行场景补充幂等、状态机、审计、对账、灾备和最小权限。标题没有岗位和轮次，不能推断内部题库。项目回答需量化指标、明确个人职责，并说明故障、回滚和证据链；未实践技术要诚实标注。",
+    "followUps": [
+      {
+        "question": "银行系统为何重视可追溯？",
+        "answer": "交易错误需定位来源、责任和修复过程，审计日志与不可变业务号是基础。"
+      },
+      {
+        "question": "数据库优化为何不能只看速度？",
+        "answer": "索引或隔离级别变化可能影响一致性、锁竞争和恢复，需要完整回归。"
+      }
+    ],
+    "pitfalls": [
+      "不要以公司规模推断所有岗位都问同一深度。"
+    ],
+    "tags": [
+      "企业面试",
+      "银行后端"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按银行 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0290",
+    "shortAnswer": "字节跳动 Java 面试准备应兼顾基础深度、算法编码、分布式系统和项目数据化复盘。",
+    "fullAnswer": "通用范围含集合并发、JVM、Spring、MySQL、Redis、MQ、网络、Linux和算法；高并发设计要先给规模、SLA 和一致性假设。文章标题未指明业务线，因此不能宣称固定题型。项目需解释瓶颈证据、个人改动、量化收益和失败教训；未知问题可现场推导但应明确假设。",
+    "followUps": [
+      {
+        "question": "算法题卡住时怎么沟通？",
+        "answer": "先复述约束、给朴素解和复杂度，再逐步优化并用样例验证。"
+      },
+      {
+        "question": "系统设计如何体现取舍？",
+        "answer": "列候选方案，在一致性、延迟、成本和可运维性上比较。"
+      }
+    ],
+    "pitfalls": [
+      "不要用背诵某公司题库替代基础理解。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0291",
+    "shortAnswer": "作业帮 Java 面试准备可结合通用后端基础、在线教育流量波动与实时互动可靠性。",
+    "fullAnswer": "复习 Java、并发、JVM、Spring、数据库、Redis、MQ、网络与算法；教育场景可练课程、直播互动、作业任务和突发流量，但不假设团队必问。项目中准备容量、延迟、故障和数据一致性证据，设计题考虑未成年人隐私和内容权限。正式复习范围应由 JD 和面试轮次决定。",
+    "followUps": [
+      {
+        "question": "上课高峰流量如何处理？",
+        "answer": "容量预估、提前扩容、入口限流、缓存与异步削峰，并准备降级和监控。"
+      },
+      {
+        "question": "实时互动消息丢失怎么办？",
+        "answer": "按消息重要性采用确认、重试、序列号和补拉，非关键事件可有损降级。"
+      }
+    ],
+    "pitfalls": [
+      "不要忽略教育数据的隐私与访问控制。"
+    ],
+    "tags": [
+      "企业面试",
+      "在线教育"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按在线教育 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0292",
+    "shortAnswer": "B站 Java 面试准备应覆盖后端基础、内容系统、消息与高并发，并以岗位描述校准。",
+    "fullAnswer": "通用复习并发、JVM、Spring、MySQL、Redis、MQ、HTTP、Linux 和算法；内容社区可练 Feed、弹幕、计数、审核和热点，但只是设计练习。项目要说明真实规模、缓存一致、异步链路、故障处理和个人贡献。对实时场景需区分强一致业务与可降级体验数据，并说明热点突发时的限流、降级与恢复。",
+    "followUps": [
+      {
+        "question": "弹幕类高频写入如何设计？",
+        "answer": "按房间或视频分区、批量持久化、冷热分层，并用序列处理乱序和补拉。"
+      },
+      {
+        "question": "热门视频缓存如何防雪崩？",
+        "answer": "多级缓存、过期抖动、请求合并和限流，同时准备源站降级。"
+      }
+    ],
+    "pitfalls": [
+      "不要把产品认知冒充公司内部技术经验。"
+    ],
+    "tags": [
+      "企业面试",
+      "内容系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "缺少具体岗位与轮次，按内容方向 Java 后端通用准备回答。"
+  },
+  {
+    "sourceId": "src-0293",
+    "shortAnswer": "可重入分布式锁要记录持有者身份与重入计数，并让加锁、续租和释放原子执行。",
+    "fullAnswer": "Redis 可用 Hash 保存 owner 和 count，Lua 脚本在 key 不存在时创建并设租期，同一 owner 重入时 count 加一，释放时减一，归零才删除。owner 应包含实例与线程/请求身份。仍需 watchdog、fencing token 和业务幂等应对暂停与网络分区。锁上下文跨线程传递必须明确，不能误把另一线程当持有者。",
+    "followUps": [
+      {
+        "question": "为什么 String token 不够表达重入？",
+        "answer": "只能判断所有者，无法记录同一所有者嵌套获取次数，过早释放会破坏临界区。"
+      },
+      {
+        "question": "服务重启后重入计数怎么办？",
+        "answer": "租约最终过期；关键写入仍靠 fencing 或数据库版本拒绝旧持有者。"
+      }
+    ],
+    "pitfalls": [
+      "分布式可重入会增加语义复杂度，非必要不应使用。"
+    ],
+    "tags": [
+      "分布式锁",
+      "可重入"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按 Redis Hash 与 Lua 的常见实现回答。"
+  },
+  {
+    "sourceId": "src-0294",
+    "shortAnswer": "OPPO Java 面试准备应根据具体业务团队覆盖后端基础、性能、移动生态服务与项目深挖。",
+    "fullAnswer": "通用内容有 Java 集合并发、JVM、Spring、数据库、缓存、MQ、网络、Linux 和算法；若岗位涉及设备云或应用服务，再补设备身份、推送和多版本兼容。标题不足以推断固定考点。回答项目时说明真实职责、指标、故障与取舍，系统设计必须包含安全边界和降级。",
+    "followUps": [
+      {
+        "question": "推送系统要处理哪些状态？",
+        "answer": "设备 token 更新、重复消息、离线过期、厂商回执和用户权限。"
+      },
+      {
+        "question": "多版本客户端如何兼容？",
+        "answer": "版本化协议、能力协商、灰度和服务端兼容窗口，并监控旧版本占比。"
+      }
+    ],
+    "pitfalls": [
+      "不要把 Android 客户端知识默认当作 Java 后端岗位要求。"
+    ],
+    "tags": [
+      "企业面试",
+      "Java后端"
+    ],
+    "difficulty": "基础",
+    "contextNote": "缺少具体岗位与轮次，按通用 Java 后端准备回答。"
+  },
+  {
+    "sourceId": "src-0295",
+    "shortAnswer": "Java 垃圾回收从 GC Roots 可达性判断存活，再由具体收集器回收和整理内存。",
+    "fullAnswer": "GC Roots 包括线程栈引用、静态字段、JNI 等；不可达对象才有资格回收。复制、标记清除、标记整理和分代策略按存活率组合，G1、ZGC 等在停顿与吞吐间取舍。写屏障维护并发标记或代际关系。调优应基于 GC 日志、分配速率和暂停 SLA，先排查泄漏与对象生命周期。",
+    "followUps": [
+      {
+        "question": "为什么有可达对象仍可能是泄漏？",
+        "answer": "业务已经不需要，但被集合、监听器或 ThreadLocal 强引用，GC 无法判断语义。"
+      },
+      {
+        "question": "Young GC 一定只处理新生代吗？",
+        "answer": "具体根扫描和跨代引用仍涉及其他区域，行为随收集器而异。"
+      }
+    ],
+    "pitfalls": [
+      "收集器选择必须说明 JDK、堆规模和目标。"
+    ],
+    "tags": [
+      "JVM",
+      "垃圾回收"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体 GC 行为以目标 JDK 和收集器为准。"
+  },
+  {
+    "sourceId": "src-0296",
+    "shortAnswer": "缓存穿透是请求不存在数据绕过缓存，击穿是热点 key 失效时并发回源；成因和治理不同。",
+    "fullAnswer": "穿透常由恶意或无效 ID、空结果未缓存、参数空间巨大造成，可用参数校验、空值短缓存、布隆过滤器和限流。击穿源于热点同刻过期，可用互斥重建、逻辑过期、提前刷新或永不过期配主动更新。两者都要防缓存与数据库故障放大，并监控回源率；空值和布隆数据还需随源数据更新。",
+    "followUps": [
+      {
+        "question": "布隆过滤器误判会怎样？",
+        "answer": "可能把不存在项当作存在而回源，但不会把已加入项误判为不存在，删除需特殊结构。"
+      },
+      {
+        "question": "互斥重建失败怎么办？",
+        "answer": "保留旧值短暂服务或快速失败降级，并确保锁释放与重试有界。"
+      }
+    ],
+    "pitfalls": [
+      "缓存雪崩是大量 key 同时失效，不能与单热点击穿混淆。"
+    ],
+    "tags": [
+      "缓存",
+      "击穿",
+      "穿透"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0297",
+    "shortAnswer": "Java 反射允许程序在运行时获取类型信息并动态调用成员，是许多框架扩展的基础。",
+    "fullAnswer": "通过 Class 可枚举构造器、方法、字段和注解，并执行实例化或调用；IoC、ORM、序列化和测试框架借此处理未知业务类型。代价包括类型错误延后、调用开销、模块访问限制和安全风险。应缓存查找结果、限制外部可控类名，优先公开 API；高性能路径可评估 MethodHandle 或生成代码。",
+    "followUps": [
+      {
+        "question": "getMethod 与 getDeclaredMethod 有何区别？",
+        "answer": "前者查找公开且含继承方法，后者查当前类声明的方法，不限可见性。"
+      },
+      {
+        "question": "反射会破坏封装吗？",
+        "answer": "深反射可能绕过访问边界，但新 JDK 模块强封装会限制，仍不应滥用。"
+      }
+    ],
+    "pitfalls": [
+      "不能假设 setAccessible 在所有运行环境都成功。"
+    ],
+    "tags": [
+      "Java反射",
+      "运行时"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0298",
+    "shortAnswer": "Java 泛型在编译期提供类型参数化，减少强制转换并提高集合与 API 的复用和安全。",
+    "fullAnswer": "例如 List<String> 让编译器阻止放入 Integer，并在读取时自动推断类型。Java 泛型主要通过类型擦除实现，运行时通常没有具体参数类型，因此不能直接 new T、创建泛型数组或用 instanceof List<String>。通配符遵循 PECS：生产者 extends，消费者 super。公共 API 应避免原始类型并理解桥接方法。",
+    "followUps": [
+      {
+        "question": "List<Object> 是 List<String> 的父类型吗？",
+        "answer": "不是，Java 泛型不协变；需要只读视图可用 List<? extends Object>。"
+      },
+      {
+        "question": "类型擦除为什么产生桥接方法？",
+        "answer": "保持泛型重写后的多态与二进制兼容，由编译器生成转换方法。"
+      }
+    ],
+    "pitfalls": [
+      "泛型提高编译期安全，不会自动校验反序列化外部数据。"
+    ],
+    "tags": [
+      "Java泛型",
+      "类型擦除"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0299",
+    "shortAnswer": "避免内存泄漏要缩短无用对象的强引用生命周期，并持续监控内存趋势而非只依赖 GC。",
+    "fullAnswer": "常见来源是静态集合、无界缓存、监听器未注销、ThreadLocal 未 remove、线程与类加载器长期存活、直接内存或资源未关闭。设计上使用有界缓存和过期策略、try-with-resources、生命周期对称注册注销，并避免把请求对象挂到单例。排查用堆转储支配树、GC 日志和 NMT，修复后做长期压测验证基线稳定。",
+    "followUps": [
+      {
+        "question": "ThreadLocal 为什么会泄漏？",
+        "answer": "线程池线程长期存在，value 可能在 key 弱引用消失后仍被 Entry 持有，应 finally remove。"
+      },
+      {
+        "question": "GC 后堆仍增长如何判断泄漏？",
+        "answer": "比较多次 Full GC 后的存活基线、对象数量和引用链，排除业务缓存预热。"
+      }
+    ],
+    "pitfalls": [
+      "扩大堆只能延缓问题，不能修复引用生命周期错误。"
+    ],
+    "tags": [
+      "Java内存",
+      "内存泄漏"
+    ],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0300",
+    "shortAnswer": "Java 线程安全可通过不可变对象、线程封闭、锁、volatile/CAS、并发容器和消息传递实现。",
+    "fullAnswer": "先减少共享：局部变量、不可变值和按线程隔离最简单；共享复合状态用 synchronized 或 Lock；状态标志可用 volatile；计数和条件更新可用原子类；集合使用 ConcurrentHashMap、阻塞队列。数据库唯一约束或事务保护跨进程不变量。选择要明确原子范围与 happens-before，并用并发测试验证，不能只给单字段加 volatile。",
+    "followUps": [
+      {
+        "question": "不可变对象为何线程安全？",
+        "answer": "构造后状态不变化且安全发布后，线程只读不会发生竞态。"
+      },
+      {
+        "question": "ConcurrentHashMap 能保证先查后改原子吗？",
+        "answer": "多个独立调用不能，应使用 compute、merge 或额外锁表达复合操作。"
+      }
+    ],
+    "pitfalls": [
+      "线程安全是业务不变量在所有交错下成立，不是没有异常。"
+    ],
+    "tags": [
+      "Java并发",
+      "线程安全"
+    ],
+    "difficulty": "中等",
+    "contextNote": ""
+  }
+]

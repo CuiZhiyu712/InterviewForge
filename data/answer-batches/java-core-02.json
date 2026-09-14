@@ -1,0 +1,262 @@
+[
+  {
+    "sourceId": "src-0552",
+    "shortAnswer": "Java 8 的 HashMap 由数组、链表和红黑树组成，以桶定位并在高冲突时树化。",
+    "fullAnswer": "HashMap 的 table 是桶数组，键的 hash 经过扰动后按数组长度取索引。空桶可直接放入节点；发生冲突时沿链表比较 hash 与 equals，链表达到阈值且数组容量足够时转换为红黑树，把极端查找从线性降到对数级。元素超过容量乘负载因子后通常扩容为两倍，旧桶中的节点依据新增高位拆到原位置或原位置加旧容量。它用额外空间换取接近常数时间的查询，但依赖稳定的 hashCode/equals，且不提供并发安全。",
+    "followUps": [
+      { "question": "为什么数组容量通常保持为 2 的幂？", "answer": "这样可以用 hash 与 length-1 的按位与代替取模，并让扩容时节点只需依据一个新增高位决定留在原桶还是移动固定偏移。" },
+      { "question": "链表什么时候树化？", "answer": "Java 8 中桶节点达到树化阈值且 table 容量至少为 64 时才树化；容量太小时优先扩容以分散冲突。" }
+    ],
+    "pitfalls": ["不要把平均 O(1) 说成绝对 O(1)；哈希质量、负载和冲突结构都会影响实际复杂度。"],
+    "tags": ["HashMap", "红黑树", "扩容"],
+    "difficulty": "中等",
+    "contextNote": "按 JDK 8 及之后的主流实现回答。"
+  },
+  {
+    "sourceId": "src-0553",
+    "shortAnswer": "Java 类从加载到可用通常经历加载、链接和初始化，最终由类名与定义加载器共同确定身份。",
+    "fullAnswer": "加载阶段查找字节码并创建 Class 对象；链接包含验证、准备和解析，验证保证格式与安全约束，准备为静态字段分配内存并赋默认值，解析把符号引用转换为直接引用。初始化阶段执行类初始化方法，按源码顺序处理静态赋值与静态块，并遵循父类先初始化。触发初始化的典型情况包括 new、访问非编译期常量静态字段和反射调用。类加载通常采用双亲委派保护核心类型，但容器、SPI 和插件系统会按隔离需求调整可见性。排障时要区分“找到类”“完成链接”和“触发初始化”。",
+    "followUps": [
+      { "question": "访问 static final 常量一定会初始化类吗？", "answer": "不一定；若它是编译期常量，值可能已内联到调用方常量池，访问时不会触发定义类初始化。" },
+      { "question": "Class.forName 与 ClassLoader.loadClass 有何常见差别？", "answer": "Class.forName 默认会初始化类；loadClass 通常只完成加载，是否链接或初始化取决于后续使用和调用参数。" }
+    ],
+    "pitfalls": ["加载、链接和初始化不是同义词；回答触发时机时必须明确讨论的是哪一个阶段。"],
+    "tags": ["JVM", "类加载", "类初始化"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0554",
+    "shortAnswer": "synchronized 通过对象监视器表达互斥，并在加锁解锁之间建立可见性和有序性。",
+    "fullAnswer": "同步代码块会生成 monitorenter 和 monitorexit，实例同步方法锁当前对象，静态同步方法锁对应 Class。线程只有取得同一监视器后才能进入临界区，退出锁 happens-before 后续成功获取同一锁，使共享数据对下一线程可见；锁还支持可重入。JVM 会依据竞争情况采用轻量级路径、自旋或膨胀到重量级监视器，具体对象头与锁优化随 JDK 实现变化。选择 synchronized 的关键不是背锁状态，而是用同一锁完整保护业务不变量，同时缩短临界区并避免锁内慢 I/O。",
+    "followUps": [
+      { "question": "synchronized 为什么可以重入？", "answer": "监视器记录持有线程及进入次数，同一线程再次获取只增加计数，退出对应次数后才真正释放。" },
+      { "question": "同步方法抛异常会释放锁吗？", "answer": "会；编译器和 JVM 保证退出同步区域时释放监视器，无论方法正常返回还是异常传播。" }
+    ],
+    "pitfalls": ["对象头中锁标记和偏向锁等细节随 JDK 版本变化，不应把某一版本实现描述成 Java 语言永久规范。"],
+    "tags": ["synchronized", "Monitor", "happens-before"],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0555",
+    "shortAnswer": "JDK 动态代理基于接口生成代理类，CGLIB 通常通过生成目标类子类来拦截可覆盖方法。",
+    "fullAnswer": "代理把横切逻辑放在调用者与目标对象之间，可用于事务、鉴权、日志和缓存。JDK 代理要求业务暴露接口，调用进入 InvocationHandler，再由处理器决定是否转发；CGLIB 借助字节码生成目标类的子类并覆盖方法，因此可代理没有接口的普通类。CGLIB 不能覆盖 final 类或 final 方法，构造与自调用也需注意。现代 Spring 在有接口时可选 JDK 代理，无接口时常使用类代理。选择重点应是契约、可测试性和代理边界，而不是简单比较一次调用性能。",
+    "followUps": [
+      { "question": "为什么代理对象内部自调用可能绕过增强？", "answer": "方法通过 this 直接调用同一对象的方法，没有再次经过外层代理入口，因此事务或日志拦截器不会被触发。" },
+      { "question": "CGLIB 能代理 private 方法吗？", "answer": "不能通过子类覆盖 private 方法；同理 final 方法不可覆盖，因此不会得到基于覆盖的拦截增强。" }
+    ],
+    "pitfalls": ["不要断言 CGLIB 永远比 JDK 代理快；JDK 与字节码库持续优化，工程上应先看类型约束和代理语义。"],
+    "tags": ["动态代理", "JDK Proxy", "CGLIB"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0556",
+    "shortAnswer": "ArrayList 以连续数组支持快速随机访问，LinkedList 以双向链表擅长已定位节点附近的链接修改。",
+    "fullAnswer": "ArrayList 的 get 可按下标直接寻址，缓存局部性好，尾部追加通常是摊销常数时间；容量不足会扩容并复制数组，中间插入删除需要搬移后续元素。LinkedList 的节点保存前后引用，按下标访问必须从两端遍历；找到位置后改变链接成本低，但查找本身常为线性时间，并且每个元素额外占用引用和对象开销。多数通用场景 ArrayList 更快、更省内存。只有频繁在已持有迭代位置附近插删，且不依赖随机访问时，链表才可能合适，队列通常更应直接选 Deque。",
+    "followUps": [
+      { "question": "ArrayList 尾部 add 为什么称为摊销 O(1)？", "answer": "大多数追加只写一个槽位，偶尔扩容需要复制全部元素；把扩容成本分摊到多次追加后，平均为常数级。" },
+      { "question": "LinkedList 头部插入一定比 ArrayList 快吗？", "answer": "渐进复杂度上是，但实际小集合中对象分配、指针访问和缓存不友好可能抵消优势，仍应以真实负载衡量。" }
+    ],
+    "pitfalls": ["不要只背复杂度表；LinkedList 的“插入 O(1)”前提是已经得到目标节点或迭代器位置。"],
+    "tags": ["ArrayList", "LinkedList", "集合选型"],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0557",
+    "shortAnswer": "HashMap 非线程安全，Hashtable 以整表同步提供旧式安全，ConcurrentMap 定义面向并发的原子映射契约。",
+    "fullAnswer": "HashMap 适合单线程或外部同步环境，允许一个 null 键和 null 值。Hashtable 是早期具体类，主要方法以 synchronized 串行化，禁止 null，接口与迭代体验也较陈旧。ConcurrentMap 是接口，增加 putIfAbsent、replace、compute 等原子复合操作；常用实现 ConcurrentHashMap 以更细粒度协调获得更高并发，并提供弱一致迭代。工程上共享映射通常面向 ConcurrentMap 编程并选 ConcurrentHashMap，单线程局部数据选 HashMap；一般不再新用 Hashtable。即使容器线程安全，跨多个键的业务事务仍需更高层同步。",
+    "followUps": [
+      { "question": "为什么并发 Map 通常禁止 null？", "answer": "get 返回 null 时需要明确表示不存在；允许 null 会使并发调用无法区分键缺失和映射值为 null。" },
+      { "question": "ConcurrentMap 是具体实现吗？", "answer": "不是，它是并发映射接口；ConcurrentHashMap、ConcurrentSkipListMap 等实现提供不同顺序和性能特性。" }
+    ],
+    "pitfalls": ["ConcurrentMap 的单次操作原子，不代表多次调用组成的检查后执行自动原子，应优先使用其复合 API。"],
+    "tags": ["HashMap", "Hashtable", "ConcurrentMap"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0558",
+    "shortAnswer": "Java 反射是在运行期检查并操作类、字段、方法和构造器元数据的机制。",
+    "fullAnswer": "程序可从 Class 对象取得构造器、方法、字段、注解和泛型信息，并通过 Constructor、Method、Field 完成动态实例化或调用。框架用它实现依赖注入、对象映射、测试工具和插件发现，因为调用目标可到运行期才确定。代价是编译期类型检查减弱、访问控制更复杂、代码可读性下降，并可能受模块边界限制；反射调用也有额外开销，虽然 JVM 会优化热点路径。工程上应缓存稳定元数据、限制可访问范围、校验外部输入，不要在高频核心路径里无边界地扫描和调用。",
+    "followUps": [
+      { "question": "获取 Class 对象有哪些方式？", "answer": "可使用类型字面量如 String.class、对象的 getClass、Class.forName，或通过类加载器加载；是否触发初始化要看具体 API。" },
+      { "question": "setAccessible 是否总能突破访问限制？", "answer": "不能保证；强封装模块、运行参数和安全策略可能拒绝深反射，框架应优先使用公开 API 或显式开放模块。" }
+    ],
+    "pitfalls": ["反射不是“完全忽略权限”；Java 模块系统和运行环境仍可能阻止对非开放成员的深度访问。"],
+    "tags": ["反射", "Class", "动态调用"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0559",
+    "shortAnswer": "Spring 可使用 DEFAULT、READ_UNCOMMITTED、READ_COMMITTED、REPEATABLE_READ 和 SERIALIZABLE 隔离设置。",
+    "fullAnswer": "@Transactional 的 isolation 属性最终交给事务管理器和数据库连接。DEFAULT 表示沿用底层数据库默认级别；READ_UNCOMMITTED 可能出现脏读，READ_COMMITTED 阻止脏读但仍可能不可重复读，REPEATABLE_READ 保证同一事务内重复读取的一致视图，SERIALIZABLE 隔离最强但并发成本最高。具体幻读表现和锁机制取决于数据库实现，例如 InnoDB 还结合 MVCC 与范围锁。选择时应从业务一致性要求、访问模式和冲突概率出发，而不是统一调到最高级别；还要确认连接池和驱动真正应用了设置。",
+    "followUps": [
+      { "question": "Spring 的 DEFAULT 是什么级别？", "answer": "它不是固定级别，而是让事务使用底层数据源或数据库的默认隔离级别。" },
+      { "question": "隔离级别越高一定越好吗？", "answer": "不是；更强隔离通常增加锁等待、冲突或串行化失败，应满足业务正确性后选择成本可接受的最低级别。" }
+    ],
+    "pitfalls": ["不要只背 ANSI 现象表就断言所有数据库行为一致，MVCC、间隙锁和快照规则具有实现差异。"],
+    "tags": ["Spring事务", "隔离级别", "数据库"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0560",
+    "shortAnswer": "Spring 事务应围绕完整业务用例设置边界，并显式处理传播、回滚规则和代理限制。",
+    "fullAnswer": "在典型服务中，我会把 @Transactional 放在 service 的公开方法上，使一组数据库操作要么共同提交、要么按回滚规则撤销。实现由 Spring AOP 代理和 PlatformTransactionManager 协作，连接等资源绑定到当前线程；因此同类自调用、私有方法、跨线程执行都可能绕过原事务。使用时还要控制事务长度，避免在锁持有期间调用慢远程接口，并为受检异常配置 rollbackFor。只读查询可标记 readOnly，但它更多是优化提示。若需要程序化分段处理，可使用 TransactionTemplate 明确控制结果与异常。",
+    "followUps": [
+      { "question": "事务方法中调用远程服务有什么风险？", "answer": "远程延迟会延长数据库连接和锁持有时间，失败重试也可能放大事务；通常应缩短本地事务，并用消息、补偿或幂等协调跨系统。" },
+      { "question": "异步方法能继承调用方事务吗？", "answer": "通常不能，Spring 本地事务资源绑定在线程上下文，新线程需要自己的事务边界。" }
+    ],
+    "pitfalls": ["不要虚构具体项目使用经历；回答“用过吗”时应结合本人真实案例，本条只给出通用正确做法。"],
+    "tags": ["Spring", "Transactional", "事务边界"],
+    "difficulty": "中等",
+    "contextNote": "原题询问个人经历；这里按通用 Java 服务使用 Spring 事务的场景回答，不代表候选人实际项目事实。"
+  },
+  {
+    "sourceId": "src-0561",
+    "shortAnswer": "假设题目指 ArrayList，它的 size、数组写入、扩容和搬移是多步非原子操作，因此并发修改不安全。",
+    "fullAnswer": "ArrayList 的 add 并非一次不可分割操作：线程会读取 size、检查容量、可能创建并复制新数组、把元素写入 elementData，再更新 size。两个线程可能同时看到相同 size 并写同一槽位，造成覆盖或计数丢失；并发扩容还可能让一个线程基于旧数组操作，出现元素丢失或越界。remove 同样包含数组搬移与 size 修改，遍历期间结构变化则可能触发快速失败，但这不是线程安全保障。共享写入应改用外部锁、Collections.synchronizedList、CopyOnWriteArrayList，或重新设计为线程封闭数据。",
+    "followUps": [
+      { "question": "volatile 修饰 ArrayList 引用能解决问题吗？", "answer": "不能；volatile 只保证引用的可见性和单次读写语义，无法把容器内部多步骤修改变成原子操作。" },
+      { "question": "CopyOnWriteArrayList 适合什么负载？", "answer": "适合读多写少且允许读取旧快照的场景；每次写都会复制数组，写频繁或数组很大时成本很高。" }
+    ],
+    "pitfalls": ["快速失败迭代器只用于尽早暴露并发修改，不能承诺必然抛异常，更不等于同步机制。"],
+    "tags": ["ArrayList", "线程安全", "并发修改"],
+    "difficulty": "中等",
+    "contextNote": "原题缺少被问对象；结合相邻面经题，假设讨论的是 ArrayList 的线程不安全源码位置。"
+  },
+  {
+    "sourceId": "src-0562",
+    "shortAnswer": "ArrayList 是基于可扩容 Object 数组实现的有序列表，随机访问快，扩容和中间修改需要复制。",
+    "fullAnswer": "ArrayList 用 elementData 保存元素，size 表示逻辑长度，容量与元素数分离。首次添加时按实现规则分配初始数组，容量不足就计算新容量，创建更大的数组并复制旧数据；常见 JDK 实现按约一点五倍增长，但细节应以版本为准。get 先检查下标再直接访问数组，set 替换槽位；指定位置 add 会把后半段整体右移，remove 则左移并清空尾槽以便垃圾回收。它允许 null、保持插入顺序，遍历局部性好，但不是线程安全容器。",
+    "followUps": [
+      { "question": "ArrayList 删除元素后为什么要把尾槽设为 null？", "answer": "搬移后旧尾槽若仍引用对象，会造成不必要的可达性并延迟垃圾回收，清空可帮助释放对象。" },
+      { "question": "ensureCapacity 有什么用途？", "answer": "已知即将加入大量元素时可预先扩容，减少多次数组分配和复制，但容量估计过大也会浪费内存。" }
+    ],
+    "pitfalls": ["增长倍数与默认容量属于实现细节，回答时应标注 JDK 版本，不能当作 List 接口契约。"],
+    "tags": ["ArrayList", "动态数组", "扩容"],
+    "difficulty": "中等",
+    "contextNote": "按常见 JDK 实现说明，具体扩容细节以运行版本源码为准。"
+  },
+  {
+    "sourceId": "src-0563",
+    "shortAnswer": "ArrayList 偏向索引读取和紧凑存储，LinkedList 偏向已定位节点处的链接增删。",
+    "fullAnswer": "从访问路径看，ArrayList 的连续数组可以按下标计算地址，CPU 缓存友好；LinkedList 需要沿节点引用移动，即使从较近一端开始仍是线性遍历。从修改看，ArrayList 中间增删要移动一段元素，LinkedList 在节点已找到后只调整前后引用，但寻找位置的成本不能忽略。空间上，ArrayList 可能保留少量空容量，LinkedList 每个元素都承担节点对象和双向引用开销。实际 Java 业务里 ArrayList 通常是默认选择；队首队尾操作更适合 ArrayDeque，而不是因为“链表插入快”就直接选 LinkedList。",
+    "followUps": [
+      { "question": "两种列表的迭代器删除复杂度如何？", "answer": "LinkedList 迭代器已持有节点时可常数级摘链；ArrayList 仍需移动后续元素，因此与删除位置后的元素数相关。" },
+      { "question": "为什么 ArrayList 常比理论复杂度看起来更快？", "answer": "连续内存带来更好的缓存局部性和更少对象间接寻址，批量复制还可使用高度优化的底层实现。" }
+    ],
+    "pitfalls": ["不能只以“插入多”选择 LinkedList，还要问插入位置如何获得；按索引定位会先付出 O(n) 查找。"],
+    "tags": ["List", "ArrayList", "LinkedList"],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0564",
+    "shortAnswer": "通用业务集合优先 ArrayList；只有经迭代器定位后频繁插删且无需随机访问时才考虑 LinkedList。",
+    "fullAnswer": "如果数据主要按下标读取、顺序遍历、批量传输或追加到尾部，ArrayList 的紧凑布局和缓存局部性通常更优，例如查询结果、DTO 列表和批处理集合。LinkedList 适合调用方已经持有 ListIterator，并在当前位置频繁插入删除的特殊场景；若每次仍用 get(index) 找位置，它的线性查找会抵消摘链优势。栈、队列和双端队列需求应优先 ArrayDeque，避免 LinkedList 的节点开销。选型还要看元素规模、写入比例和内存，而不是仅凭大 O 结论；性能敏感处应用基准验证。",
+    "followUps": [
+      { "question": "频繁头部插入应该选 LinkedList 吗？", "answer": "若确实需要双端操作，ArrayDeque 通常具有更好的内存和缓存表现；只有接口或节点语义要求 List 时再比较 LinkedList。" },
+      { "question": "已知最终元素数量时如何优化 ArrayList？", "answer": "构造时传入预估容量或调用 ensureCapacity，可减少扩容和复制，但应避免远超实际规模。" }
+    ],
+    "pitfalls": ["“增删多就用 LinkedList”过于粗糙；必须把定位成本、缓存局部性和替代数据结构一起计算。"],
+    "tags": ["集合选型", "ArrayList", "ArrayDeque"],
+    "difficulty": "中等",
+    "contextNote": "原题来自公司面经，本答案按一般 Java 后端集合选型语境说明。"
+  },
+  {
+    "sourceId": "src-0565",
+    "shortAnswer": "ArrayList 不是线程安全的，并发读写可能覆盖元素、丢失 size 更新或观察到不一致状态。",
+    "fullAnswer": "ArrayList 没有为 add、remove、扩容和遍历建立同步或内存可见性保证。并发 add 会分别读取 size 后写数组并更新计数，这些步骤可能交错；一个线程扩容替换 elementData 时，另一个线程也可能仍基于旧数组操作。只读且列表在发布后不再改变，可以通过安全发布供多线程共享；存在修改时应按模式选择方案：小规模读多写少可用 CopyOnWriteArrayList，简单互斥可用 synchronizedList 并在迭代时同步，更复杂场景可用锁、不可变快照或线程封闭。",
+    "followUps": [
+      { "question": "Collections.synchronizedList 后可以无锁遍历吗？", "answer": "不可以；其单个方法受同步保护，但迭代是一组操作，必须按文档在包装列表对象上同步，或先复制快照。" },
+      { "question": "多个线程只读 ArrayList 安全吗？", "answer": "前提是构建完成后不再修改，并通过 final、锁、volatile 或并发容器等方式安全发布，使其他线程看到完整状态。" }
+    ],
+    "pitfalls": ["“只读”还要求安全发布；把列表引用随意放到共享字段后不再写，并不自动保证其他线程看到正确初始化。"],
+    "tags": ["ArrayList", "线程安全", "安全发布"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0566",
+    "shortAnswer": "任务提交依次尝试核心线程、工作队列、非核心线程，最后执行拒绝策略。",
+    "fullAnswer": "调用 execute 后，若当前工作线程少于 corePoolSize，线程池先创建核心工作线程执行任务；否则尝试把任务加入 workQueue。成功入队后还会复查运行状态，防止 shutdown 与入队并发导致任务无人处理；必要时移除并拒绝，或在没有工作线程时补建线程。队列已满且线程数低于 maximumPoolSize 时创建非核心线程，达到上限或线程池停止后调用 RejectedExecutionHandler。工作线程完成任务后继续从队列获取，空闲线程按 keepAliveTime 回收。这个流程要求队列容量与拒绝策略共同表达过载边界。",
+    "followUps": [
+      { "question": "任务成功入队后为什么还要复查线程池状态？", "answer": "入队与 shutdown 可能并发，复查可在已停止接收任务时移除并拒绝该任务，避免它留在队列中永不执行。" },
+      { "question": "CallerRunsPolicy 有什么效果？", "answer": "它让提交任务的线程直接执行任务，形成自然背压，但会拉长调用线程延迟，且在线程池关闭时任务会被丢弃。" }
+    ],
+    "pitfalls": ["不要忽略入队后的状态复查；这一步是处理提交与关闭竞态的重要部分。"],
+    "tags": ["线程池", "execute", "拒绝策略"],
+    "difficulty": "进阶",
+    "contextNote": "按 ThreadPoolExecutor.execute 的典型实现流程回答。"
+  },
+  {
+    "sourceId": "src-0567",
+    "shortAnswer": "AQS 用一个同步状态、CAS 和 FIFO 等待队列为锁与同步器提供通用骨架。",
+    "fullAnswer": "AbstractQueuedSynchronizer 把资源状态抽象为 volatile state，子类通过 tryAcquire、tryRelease 等钩子定义独占或共享获取规则，状态更新通常使用 CAS。获取失败的线程被包装成队列节点进入 CLH 风格的同步队列，必要时 park；前驱释放资源后唤醒后继，线程重新竞争。独占模式支撑 ReentrantLock，共享模式支撑 Semaphore、CountDownLatch 等；Condition 还有独立条件队列，signal 后节点转移到同步队列。AQS 复用了排队、阻塞、取消和唤醒机制，但不替业务决定公平性、重入含义或许可数量。",
+    "followUps": [
+      { "question": "AQS 的 state 表示什么？", "answer": "含义由具体同步器定义，例如可重入锁的持有次数、信号量剩余许可或闭锁计数，AQS 只提供原子读写框架。" },
+      { "question": "Condition.await 后线程在哪里等待？", "answer": "线程先释放锁并进入 Condition 条件队列；被 signal 后转移到 AQS 同步队列，重新获得锁后才从 await 返回。" }
+    ],
+    "pitfalls": ["AQS 队列不是业务任务队列，也不能简单描述为严格公平；是否允许插队由具体同步器策略决定。"],
+    "tags": ["AQS", "CAS", "同步队列"],
+    "difficulty": "进阶",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0568",
+    "shortAnswer": "Spring 事务不回滚常因调用未经过代理、异常未传播或异常类型不匹配回滚规则。",
+    "fullAnswer": "排查时先确认方法是否由 Spring 管理的代理对象调用；同类 this 自调用、私有或不适合代理的方法可能绕过拦截。再看异常：默认通常只对 RuntimeException 和 Error 回滚，受检异常需配置 rollbackFor；若 catch 后吞掉异常或正常返回，代理会提交。还要检查传播行为是否加入了预期事务，数据源与事务管理器是否对应，数据库表是否支持事务，以及异步线程是否另起上下文。若内部事务已标记 rollback-only，外层仍尝试提交还可能得到 UnexpectedRollbackException。应结合事务日志和最小集成测试定位，而不是盲目加注解。",
+    "followUps": [
+      { "question": "同类自调用如何解决？", "answer": "优先把事务边界拆到另一个 Bean 并通过代理调用；也可使用 TransactionTemplate，避免依赖暴露代理的脆弱写法。" },
+      { "question": "catch 异常后仍想回滚怎么办？", "answer": "可重新抛出符合规则的异常，或在确有必要时通过事务状态显式标记 rollback-only，同时保持调用方能感知失败。" }
+    ],
+    "pitfalls": ["不要默认加了 @Transactional 就生效；代理入口、异常传播、事务管理器和底层存储缺一不可。"],
+    "tags": ["Spring事务", "回滚", "AOP代理"],
+    "difficulty": "中等",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0569",
+    "shortAnswer": "final 可限制变量重新赋值、禁止方法重写、禁止类继承，并参与安全发布语义。",
+    "fullAnswer": "final 修饰局部变量或字段时表示赋值后不能再次指向其他值；若变量引用对象，对象内部仍可变化。final 方法不能被子类覆盖，但可以重载；final 类不能被继承，因此其可重写实例方法也被封闭。构造完成前正确写入的 final 字段还享有 Java 内存模型的初始化安全保证，其他线程通过正常引用看到对象时，更可靠地观察到这些值。final 适合表达稳定依赖和不可变设计，但真正不可变还要求对象状态本身不可修改、不泄露可变引用，并安全构造。",
+    "followUps": [
+      { "question": "final 引用指向的集合还能 add 吗？", "answer": "可以；final 只禁止引用变量重新指向另一集合，不会自动冻结被引用对象。需要不可变集合还要使用不可变实现或防御性复制。" },
+      { "question": "final 方法可以重载吗？", "answer": "可以，重载是在同一类或继承体系中使用不同参数签名；final 禁止的是子类覆盖相同签名的方法。" }
+    ],
+    "pitfalls": ["final、finally、finalize 含义完全不同；尤其 finalize 已不应作为资源释放机制。"],
+    "tags": ["final", "不可变性", "Java内存模型"],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0570",
+    "shortAnswer": "static 让成员属于类而非某个实例，也用于定义静态方法、初始化块和静态嵌套类。",
+    "fullAnswer": "static 字段随类维护一份共享状态，可通过类名访问；static 方法没有隐式 this，不能直接访问实例字段或参与基于实例的动态绑定。静态初始化块在类初始化阶段按顺序执行，适合建立类级常量或必要资源，但复杂逻辑会增加初始化失败风险。static 嵌套类不持有外部类实例引用，比非静态内部类更容易独立创建，也能避免无意延长外部对象生命周期。工具函数可以是 static，但共享可变静态字段要谨慎处理并发、测试隔离和生命周期，优先使用不可变常量或显式依赖注入。",
+    "followUps": [
+      { "question": "static 方法能被重写吗？", "answer": "不能按实例多态重写；子类可声明同签名 static 方法形成隐藏，调用选择取决于引用的编译期类型。" },
+      { "question": "静态变量何时初始化？", "answer": "在类首次主动使用触发的初始化阶段执行显式赋值和静态块，早于创建该类的第一个实例。" }
+    ],
+    "pitfalls": ["不要把 static 当成全局变量的便利替代；共享可变状态会引入并发耦合、测试污染和类加载器泄漏。"],
+    "tags": ["static", "类初始化", "静态成员"],
+    "difficulty": "基础",
+    "contextNote": ""
+  },
+  {
+    "sourceId": "src-0571",
+    "shortAnswer": "Spring Boot 从创建 SpringApplication 开始，准备环境与上下文，加载 Bean 定义，刷新容器后执行启动回调。",
+    "fullAnswer": "main 方法调用 SpringApplication.run 后，框架判断应用类型，加载监听器和初始化器，准备 Environment，并解析命令行、配置文件及外部属性。随后创建合适的 ApplicationContext，应用初始化器，加载主配置类与组件定义。refresh 是核心阶段：执行 BeanFactory 后处理器、注册 BeanPostProcessor、初始化单例，并在 Web 应用中创建和启动内嵌服务器。容器刷新完成后发布生命周期事件，再调用 ApplicationRunner 和 CommandLineRunner。自动配置通过条件注解按类路径、Bean 和配置属性选择生效，排障可查看条件评估报告和启动日志。",
+    "followUps": [
+      { "question": "@EnableAutoConfiguration 如何找到候选配置？", "answer": "Spring Boot 从约定的自动配置导入元数据中加载候选类，再通过 @Conditional 系列条件筛选；具体元数据机制随 Boot 版本演进。" },
+      { "question": "Runner 在什么时候执行？", "answer": "ApplicationRunner 和 CommandLineRunner 通常在容器刷新、服务器启动完成后，由 SpringApplication 按顺序调用。" }
+    ],
+    "pitfalls": ["不要把“自动配置”说成无条件注册所有 Bean；它依赖类路径、已有 Bean、属性等条件，并允许用户配置覆盖。"],
+    "tags": ["Spring Boot", "启动流程", "自动配置"],
+    "difficulty": "进阶",
+    "contextNote": "按现代 Spring Boot 通用流程回答，候选配置元数据细节以具体版本为准。"
+  }
+]

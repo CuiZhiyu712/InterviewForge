@@ -1,0 +1,10 @@
+{
+  "name": "cui-zhiyu-interview-question-bank",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sources": "node scripts/merge-sources.mjs",
+    "build": "node scripts/build.mjs",
+    "test": "node tests/test-source-index.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
+  }
+}

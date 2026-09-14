@@ -124,6 +124,25 @@ function validateBatches(batches, sourceIds) {
   return errors;
 }
 
+function canonicalText(value) {
+  return normalizedFullAnswer(value ?? "");
+}
+
+function incomingContent(record) {
+  return {
+    shortAnswer: canonicalText(record.shortAnswer),
+    fullAnswer: canonicalText(record.fullAnswer),
+    pitfalls: record.pitfalls.map(canonicalText),
+    difficulty: record.difficulty,
+    contextNote: canonicalText(record.contextNote ?? ""),
+    followUps: record.followUps.map(({ question, answer }) => ({
+      question: canonicalText(question),
+      answer: canonicalText(answer),
+    })),
+    tags: record.tags.map(canonicalText).sort((left, right) => left.localeCompare(right)),
+  };
+}
+
 export function importAnswerBatches(databasePath, batchesPath) {
   const batches = loadBatchFiles(batchesPath);
   validateDatabaseFile(databasePath);
@@ -150,6 +169,16 @@ export function importAnswerBatches(databasePath, batchesPath) {
         review_status = 'draft'
     `);
     const updateQuestion = database.prepare("UPDATE questions SET difficulty = ?, context_note = ? WHERE id = ?");
+    const selectExistingAnswer = database.prepare(`
+      SELECT a.short_answer, a.full_answer, a.pitfalls, q.difficulty, q.context_note
+      FROM questions q LEFT JOIN answers a ON a.question_id = q.id
+      WHERE q.id = ?
+    `);
+    const selectExistingFollowUps = database.prepare(
+      "SELECT question, answer FROM follow_ups WHERE question_id = ? ORDER BY position",
+    );
+    const selectExistingTags = database.prepare("SELECT tag FROM tags WHERE question_id = ? ORDER BY tag");
+    const selectReviewCount = database.prepare("SELECT COUNT(*) AS count FROM answer_reviews WHERE question_id = ?");
     const deleteFollowUps = database.prepare("DELETE FROM follow_ups WHERE question_id = ?");
     const insertFollowUp = database.prepare(
       "INSERT INTO follow_ups (question_id, position, question, answer) VALUES (?, ?, ?, ?)",
@@ -169,6 +198,37 @@ export function importAnswerBatches(databasePath, batchesPath) {
       for (const { batchId, records } of batches) {
         for (const record of records) {
           const questionId = questionIds.get(record.sourceId);
+          const existing = selectExistingAnswer.get(questionId);
+          let existingPitfalls;
+          try {
+            existingPitfalls = existing.short_answer === null ? null : JSON.parse(existing.pitfalls);
+          } catch {
+            existingPitfalls = null;
+          }
+          const existingContent = existing.short_answer === null || !Array.isArray(existingPitfalls)
+            ? null
+            : {
+                shortAnswer: canonicalText(existing.short_answer),
+                fullAnswer: canonicalText(existing.full_answer),
+                pitfalls: existingPitfalls.map(canonicalText),
+                difficulty: existing.difficulty,
+                contextNote: canonicalText(existing.context_note),
+                followUps: selectExistingFollowUps.all(questionId).map(({ question, answer }) => ({
+                  question: canonicalText(question),
+                  answer: canonicalText(answer),
+                })),
+                tags: selectExistingTags.all(questionId).map(({ tag }) => canonicalText(tag))
+                  .sort((left, right) => left.localeCompare(right)),
+              };
+          const contentUnchanged = existingContent !== null
+            && JSON.stringify(existingContent) === JSON.stringify(incomingContent(record));
+          if (contentUnchanged) {
+            if (selectReviewCount.get(questionId).count === 0) {
+              upsertReview.run(questionId, batchId);
+            }
+            continue;
+          }
+
           deleteReviews.run(questionId);
           updateQuestion.run(record.difficulty, record.contextNote ?? "", questionId);
           upsertAnswer.run(questionId, record.shortAnswer.trim(), record.fullAnswer.trim(), JSON.stringify(record.pitfalls));

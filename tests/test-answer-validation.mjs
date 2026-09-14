@@ -212,17 +212,31 @@ try {
     database.close();
   }
 
+  const unchangedReimportResult = runImporter(databasePath, validDirectory);
+  assert.equal(unchangedReimportResult.status, 0, `unchanged reimport failed:\n${unchangedReimportResult.stderr || unchangedReimportResult.stdout}`);
+  database = new DatabaseSync(databasePath, { readOnly: true });
+  try {
+    const preservedReview = database.prepare(`
+      SELECT ar.batch, ar.status, ar.notes, ar.reviewed_at FROM answer_reviews ar
+      JOIN questions q ON q.id=ar.question_id WHERE q.source_id='src-0001'
+    `).get();
+    assert.match(preservedReview.batch, /^batch-a\.json#[a-f0-9]{64}$/);
+    assert.deepEqual(
+      { status: preservedReview.status, notes: preservedReview.notes, reviewed_at: preservedReview.reviewed_at },
+      { status: "passed", notes: "旧答案已审核", reviewed_at: "2026-09-14" },
+      "an exact reimport must preserve an existing passed review verbatim",
+    );
+  } finally {
+    database.close();
+  }
+
   const replacementDirectory = join(temporaryDirectory, "replacement-batch");
   writeBatch(replacementDirectory, "batch-b.json", [
     validRecord({
-      shortAnswer: "重新导入后的一句话答案。",
       followUps: [
         { question: "替换后的追问一？", answer: "替换后的答案一。" },
         { question: "替换后的追问二？", answer: "替换后的答案二。" },
       ],
-      pitfalls: ["重新导入后的易错点。"],
-      tags: ["替换标签"],
-      difficulty: "基础",
     }),
     validRecord({ sourceId: "src-0002", fullAnswer: secondAnswer }),
   ]);
@@ -232,16 +246,16 @@ try {
   try {
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM answers").get().count, 2);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM follow_ups").get().count, 4);
-    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tags").get().count, 3);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM tags").get().count, 4);
     assert.equal(database.prepare("SELECT COUNT(*) AS count FROM answer_reviews").get().count, 2);
     const reimported = database.prepare(`
       SELECT q.difficulty, a.short_answer FROM questions q JOIN answers a ON a.question_id = q.id
       WHERE q.source_id = 'src-0001'
     `).get();
-    assert.deepEqual({ ...reimported }, { difficulty: "基础", short_answer: "重新导入后的一句话答案。" });
+    assert.deepEqual({ ...reimported }, { difficulty: "中等", short_answer: "先定位现象，再依据证据缩小范围并验证结论。" });
     assert.deepEqual(
       database.prepare(`SELECT t.tag FROM tags t JOIN questions q ON q.id=t.question_id WHERE q.source_id='src-0001'`).all().map(({ tag }) => tag),
-      ["替换标签"],
+      ["工程实践", "排障"],
     );
     const replacementReviews = database.prepare(`
       SELECT ar.batch, ar.status, ar.notes, ar.reviewed_at FROM answer_reviews ar
@@ -253,6 +267,40 @@ try {
       { status: replacementReviews[0].status, notes: replacementReviews[0].notes, reviewed_at: replacementReviews[0].reviewed_at },
       { status: "pending", notes: "", reviewed_at: null },
     );
+    database.prepare("UPDATE answer_reviews SET status='passed', notes='追问版本已审核', reviewed_at='2026-09-15' WHERE question_id=(SELECT id FROM questions WHERE source_id='src-0001')").run();
+
+  } finally {
+    database.close();
+  }
+
+  const tagReplacementDirectory = join(temporaryDirectory, "tag-replacement-batch");
+  writeBatch(tagReplacementDirectory, "batch-c.json", [
+    validRecord({
+      followUps: [
+        { question: "替换后的追问一？", answer: "替换后的答案一。" },
+        { question: "替换后的追问二？", answer: "替换后的答案二。" },
+      ],
+      tags: ["替换标签"],
+    }),
+  ]);
+  const tagReplacementResult = runImporter(databasePath, tagReplacementDirectory);
+  assert.equal(tagReplacementResult.status, 0, `tag-only replacement failed:\n${tagReplacementResult.stderr || tagReplacementResult.stdout}`);
+  database = new DatabaseSync(databasePath);
+  try {
+    const tagReplacementReview = database.prepare(`
+      SELECT ar.batch, ar.status, ar.notes, ar.reviewed_at FROM answer_reviews ar
+      JOIN questions q ON q.id=ar.question_id WHERE q.source_id='src-0001'
+    `).get();
+    assert.match(tagReplacementReview.batch, /^batch-c\.json#[a-f0-9]{64}$/);
+    assert.deepEqual(
+      { status: tagReplacementReview.status, notes: tagReplacementReview.notes, reviewed_at: tagReplacementReview.reviewed_at },
+      { status: "pending", notes: "", reviewed_at: null },
+      "changing only tags must invalidate the passed review for the prior content version",
+    );
+    assert.deepEqual(
+      database.prepare(`SELECT t.tag FROM tags t JOIN questions q ON q.id=t.question_id WHERE q.source_id='src-0001'`).all().map(({ tag }) => tag),
+      ["替换标签"],
+    );
 
     database.exec(`
       CREATE TRIGGER fail_answer_import BEFORE INSERT ON tags
@@ -263,7 +311,7 @@ try {
     database.close();
   }
 
-  const exactReimportResult = runImporter(databasePath, replacementDirectory);
+  const exactReimportResult = runImporter(databasePath, tagReplacementDirectory);
   assert.equal(exactReimportResult.status, 0, `exact reimport failed:\n${exactReimportResult.stderr || exactReimportResult.stdout}`);
   database = new DatabaseSync(databasePath, { readOnly: true });
   try {

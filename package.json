@@ -3,8 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "db:create": "node --disable-warning=ExperimentalWarning scripts/create-database.mjs",
     "sources": "node scripts/merge-sources.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node tests/test-source-index.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
+    "test": "node tests/test-source-index.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
   }
 }

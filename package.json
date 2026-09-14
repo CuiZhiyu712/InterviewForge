@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "db:create": "node scripts/create-database.mjs",
+    "answers:import": "node --disable-warning=ExperimentalWarning scripts/import-answer-batches.mjs",
     "sources": "node scripts/merge-sources.mjs",
     "build": "node scripts/build.mjs",
-    "test": "node tests/test-source-index.mjs && node tests/test-database.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
+    "test": "node tests/test-source-index.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs && node --disable-warning=ExperimentalWarning tests/test-answer-validation.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
   }
 }

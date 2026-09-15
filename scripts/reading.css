@@ -1,16 +1,26 @@
-:root{--reading-size:15px}
+:root{--reading-size:15px;--reading-width:100%}
 
-/* Longest imported document is 351k characters; scrolling it inside the card
-   keeps the page navigable and leaves the action buttons below it in reach. */
-.markdown{font-size:var(--reading-size);max-height:560px;overflow:auto;overscroll-behavior:contain;border-radius:10px}
+/* Longest imported document is 351k characters; capping the height and the
+   width keeps the page navigable and leaves the action buttons below in reach.
+   Text reflows rather than clipping because app.css already sets
+   overflow-wrap:anywhere on .markdown. */
+.markdown{font-size:var(--reading-size);max-width:var(--reading-width);margin-left:auto;margin-right:auto;max-height:560px;overflow:auto;overscroll-behavior:contain;border-radius:10px}
 
-.reading-size{margin-left:auto;display:flex;align-items:center;gap:4px}
-.reading-size>span{font-size:12px;color:var(--muted);margin-right:2px}
-.reading-size button{border:1px solid var(--line);background:#071520;color:var(--muted);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer}
-.reading-size button:hover{border-color:var(--teal)}
-.reading-size button.active{border-color:var(--teal);color:var(--teal);font-weight:800}
+/* pre-wrap keeps the author's line breaks and only folds lines that still
+   exceed the chosen width, so a narrow column scrolls horizontally nowhere. */
+.markdown pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.markdown code{overflow-wrap:anywhere}
+
+.reading-controls{margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.reading-size,.reading-width{display:flex;align-items:center;gap:4px}
+.reading-controls>div>span{font-size:12px;color:var(--muted);margin-right:2px}
+.reading-controls button{border:1px solid var(--line);background:#071520;color:var(--muted);border-radius:8px;padding:5px 9px;font-size:12px;cursor:pointer;white-space:nowrap}
+.reading-controls button:hover{border-color:var(--teal)}
+.reading-controls button.active{border-color:var(--teal);color:var(--teal);font-weight:800}
+.reading-width input[type=range]{width:96px;margin:0;accent-color:var(--teal)}
 
 @media(max-width:720px){
-  .reading-size{margin:10px 0 0;justify-content:flex-end}
+  .reading-controls{margin:10px 0 0;justify-content:flex-end;gap:10px}
   .markdown{max-height:58vh}
+  .reading-width input[type=range]{width:70px}
 }

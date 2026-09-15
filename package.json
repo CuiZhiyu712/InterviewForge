@@ -10,6 +10,6 @@
     "quality": "node --disable-warning=ExperimentalWarning scripts/quality-report.mjs",
     "build": "node --disable-warning=ExperimentalWarning scripts/build.mjs",
     "library:build": "node --disable-warning=ExperimentalWarning scripts/build-library.mjs",
-    "test": "node tests/test-source-index.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs && node --disable-warning=ExperimentalWarning tests/test-answer-validation.mjs && node --disable-warning=ExperimentalWarning tests/test-resume-priority.mjs && node --disable-warning=ExperimentalWarning tests/test-full-coverage.mjs && node --disable-warning=ExperimentalWarning tests/test-quality-report.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs && node tests/test-library-export.mjs && node --disable-warning=ExperimentalWarning tests/test-library-parity.mjs"
+    "test": "node tests/test-source-index.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs && node --disable-warning=ExperimentalWarning tests/test-answer-validation.mjs && node --disable-warning=ExperimentalWarning tests/test-resume-priority.mjs && node --disable-warning=ExperimentalWarning tests/test-full-coverage.mjs && node --disable-warning=ExperimentalWarning tests/test-quality-report.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs && node tests/test-library-export.mjs && node --disable-warning=ExperimentalWarning tests/test-library-parity.mjs && node tests/test-reading-controls.mjs"
   }
 }

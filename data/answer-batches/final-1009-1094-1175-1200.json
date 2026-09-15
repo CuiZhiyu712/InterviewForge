@@ -1,0 +1,2802 @@
+[
+  {
+    "sourceId": "src-1009",
+    "shortAnswer": "Redis常用类型包括String、Hash、List、Set、ZSet、Stream，以及Bitmap、HyperLogLog、Geo等派生能力。",
+    "fullAnswer": "类型选择应从访问语义出发：String适合缓存、计数和分布式锁值；Hash存对象字段；List做双端队列；Set用于去重和集合运算；ZSet按分值排序；Stream提供带消费组的消息日志。Bitmap、HyperLogLog、Geo分别处理位状态、近似基数和地理位置。每种类型都有内存编码与复杂度边界，生产使用还要设置过期、限制大Key并监控热Key，不能把Redis当无约束数据库。",
+    "followUps": [
+      {
+        "question": "ZSet和List如何选？",
+        "answer": "只需保持插入顺序可用List；需要按可变分值排序、排名或范围查询时用ZSet。"
+      },
+      {
+        "question": "Redis能否直接替代消息队列？",
+        "answer": "简单低风险场景可用List或Stream，但可靠投递、积压治理、跨机房等要求高时应评估专业MQ。"
+      }
+    ],
+    "pitfalls": [
+      "只背类型名称，不说明访问模式、复杂度和容量边界。"
+    ],
+    "tags": [
+      "Redis",
+      "数据类型",
+      "缓存"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按现代Redis常见数据类型回答，模块能力随版本演进。"
+  },
+  {
+    "sourceId": "src-1010",
+    "shortAnswer": "Redis String底层使用SDS而非C的零结尾字符串，以保存长度、支持二进制安全并降低扩容成本。",
+    "fullAnswer": "SDS结构记录已用长度和分配容量，读取长度无需遍历；内容不依赖零字节终止，因此可以保存图片、序列化数据等任意字节；修改时先检查容量，避免C字符串拼接常见的缓冲区溢出，并通过预分配减少重复扩容。不同Redis版本的SDS头会按长度选择紧凑编码以节省内存。需要注意String值仍有大小上限，大值会阻塞网络和事件循环，应拆分或改用对象存储。",
+    "followUps": [
+      {
+        "question": "SDS获取长度复杂度是多少？",
+        "answer": "长度保存在头部，读取通常是O(1)，而传统C字符串strlen需扫描到终止符。"
+      },
+      {
+        "question": "SDS为什么仍保留结尾零字节？",
+        "answer": "这样可在不含内嵌零字节时兼容部分C字符串函数，但逻辑长度仍由头部字段决定。"
+      }
+    ],
+    "pitfalls": [
+      "把SDS描述成固定结构，忽略不同长度编码和版本差异。"
+    ],
+    "tags": [
+      "Redis",
+      "SDS",
+      "String"
+    ],
+    "difficulty": "中等",
+    "contextNote": "SDS内部字段布局是实现细节，以目标Redis版本源码为准。"
+  },
+  {
+    "sourceId": "src-1011",
+    "shortAnswer": "缓存雪崩是大量键同时失效或Redis故障，穿透是反复查询不存在数据；应分别用错峰过期和高可用、空值或布隆过滤器治理。",
+    "fullAnswer": "雪崩会让请求瞬间回源数据库，可给过期时间加随机抖动、预热热点、使用多级缓存与主从集群，并以限流、熔断保护数据库。穿透针对不存在键，可缓存短期空值、在入口校验参数或用布隆过滤器挡住明显不存在的数据；布隆过滤器有误判且删除困难，不能当真值源。还要区分击穿，即单个热Key失效，可用互斥重建、逻辑过期或提前刷新。所有方案都需演练Redis不可用和回源容量。",
+    "followUps": [
+      {
+        "question": "缓存击穿与雪崩有何区别？",
+        "answer": "击穿聚焦单个热点键失效造成并发回源；雪崩是大量键或整个缓存层同时不可用。"
+      },
+      {
+        "question": "布隆过滤器能保证不存在判断完全准确吗？",
+        "answer": "它不会把已加入元素判断为不存在，但可能把不存在元素判断为存在；数据同步失败也会造成业务漏拦截。"
+      }
+    ],
+    "pitfalls": [
+      "只延长TTL而不设置回源限流，故障时仍可能压垮数据库。"
+    ],
+    "tags": [
+      "Redis",
+      "缓存雪崩",
+      "缓存穿透"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按缓存旁路模式回答。"
+  },
+  {
+    "sourceId": "src-1012",
+    "shortAnswer": "Redis过期键主要采用惰性删除与周期性主动删除结合，避免全量扫描，同时回收长期不访问的过期数据。",
+    "fullAnswer": "惰性删除在访问键时检查TTL，若已过期则删除，访问路径准确但冷键可能长期占内存；主动删除由后台周期抽样检查带过期键的数据库，根据过期比例调整工作量，在CPU与回收及时性间折中。过期删除不保证到点瞬间完成，副本传播和持久化恢复也有相应语义。若内存仍不足，还会进入内存淘汰流程，它和过期删除不是一回事。业务不能把TTL当精确定时器。",
+    "followUps": [
+      {
+        "question": "为什么不每个键都建一个定时器？",
+        "answer": "海量定时器会增加内存与调度成本，集中抽样加惰性检查更可控。"
+      },
+      {
+        "question": "过期键在DEL事件前还能被读到吗？",
+        "answer": "正常命令访问会先检查并视为不存在，但实际内存回收和通知时间不承诺精确到TTL时刻。"
+      }
+    ],
+    "pitfalls": [
+      "把过期删除与maxmemory淘汰策略混为一谈。"
+    ],
+    "tags": [
+      "Redis",
+      "过期删除",
+      "TTL"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体主动过期算法与周期参数随Redis版本变化。"
+  },
+  {
+    "sourceId": "src-1013",
+    "shortAnswer": "Redis淘汰策略按候选范围与算法组合，包括不淘汰、全键或仅带TTL键的LRU、LFU、随机，以及按TTL优先淘汰。",
+    "fullAnswer": "达到maxmemory后，noeviction直接拒绝会增加内存的写命令；allkeys-lru/lfu在全部键中近似选择最近最少使用或最不常用；volatile-lru/lfu/random/ttl只考虑设置过期的键；allkeys-random随机淘汰。Redis的LRU/LFU通常是采样近似而非维护严格全局顺序。选择要结合是否允许缓存丢失、是否混放持久数据和访问分布，并通过命中率、淘汰速率和延迟压测验证。",
+    "followUps": [
+      {
+        "question": "缓存场景常优先哪类策略？",
+        "answer": "访问有热点时常考虑allkeys-lru或allkeys-lfu；周期热点明显时LFU可能更稳，但应以实际命中率验证。"
+      },
+      {
+        "question": "noeviction会怎样？",
+        "answer": "达到上限后相关写操作报错，读仍可继续；业务必须能处理失败而非假设写入成功。"
+      }
+    ],
+    "pitfalls": [
+      "把volatile策略用于大量无TTL键，导致几乎无键可淘汰。"
+    ],
+    "tags": [
+      "Redis",
+      "内存淘汰",
+      "缓存"
+    ],
+    "difficulty": "中等",
+    "contextNote": "策略名称与细节以部署Redis版本配置为准。"
+  },
+  {
+    "sourceId": "src-1014",
+    "shortAnswer": "Redis对象由逻辑类型与内部编码共同实现，底层常见SDS、哈希表、跳表、整数集合、紧凑列表和基数树。",
+    "fullAnswer": "同一逻辑类型会根据元素数量、长度和取值选择不同编码：String可能保存整数或SDS；Hash、List、ZSet在小对象时可用紧凑布局，超过阈值后切换为哈希表、quicklist或跳表加字典；Set可在纯整数小集合时用整数集合；Stream使用基数树组织条目。编码切换以减少小对象开销，同时保持大对象操作效率。具体ziplist、listpack、quicklist的使用随版本变化，不能把某一版源码结构当永久契约。",
+    "followUps": [
+      {
+        "question": "ZSet为什么同时需要字典和跳表？",
+        "answer": "字典便于按成员O(1)查分值，跳表支持按分值有序范围和排名，两者共享成员信息。"
+      },
+      {
+        "question": "内部编码可以由业务直接依赖吗？",
+        "answer": "不应依赖，它是Redis实现细节；可用OBJECT ENCODING诊断，但升级后阈值和结构可能变化。"
+      }
+    ],
+    "pitfalls": [
+      "只按旧版本说Hash一定是ziplist，忽略listpack等演进。"
+    ],
+    "tags": [
+      "Redis",
+      "底层结构",
+      "内部编码"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "明确区分公共数据类型和随版本变化的内部编码。"
+  },
+  {
+    "sourceId": "src-1015",
+    "shortAnswer": "缓存一致性通常以数据库为真值源，写库成功后删除缓存，并用重试、订阅变更或对账修复失败。",
+    "fullAnswer": "常见旁路缓存流程是读未命中查库再回填，写请求先提交数据库事务，随后删除缓存。直接同时更新库和缓存容易受并发顺序影响；删除也可能失败，因此需可靠消息、事务日志或CDC重试，并设置TTL作为最终修复。读写竞争仍可能把旧值回填，可用版本号、延迟双删或短锁降低窗口。若业务要求强一致，应减少缓存参与写路径或让读取回源，不能把短暂不一致包装成强一致。",
+    "followUps": [
+      {
+        "question": "为什么一般删除缓存而非更新缓存？",
+        "answer": "删除让下一次读取从真值源重建，减少并发更新顺序和复杂派生值计算造成的覆盖问题。"
+      },
+      {
+        "question": "先删缓存再写数据库有什么风险？",
+        "answer": "写库期间并发读可能把旧值重新写回缓存，且长期保留；先写库再删通常窗口更小。"
+      }
+    ],
+    "pitfalls": [
+      "忽略删除失败与旧值回填，声称先写库后删缓存绝对一致。"
+    ],
+    "tags": [
+      "Redis",
+      "缓存一致性",
+      "Cache Aside"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按数据库为真值源的旁路缓存模式回答。"
+  },
+  {
+    "sourceId": "src-1016",
+    "shortAnswer": "跳表用多层随机索引加速有序链表查找；压缩列表把变长节点紧凑连续存放，以空间换取更新成本。",
+    "fullAnswer": "跳表底层是按分值排序的链表，每个节点随机拥有若干层前进指针，查找从高层逐步下降，平均查询和插入为O(log n)，范围遍历顺序自然。传统ziplist把节点连续编码，保存前一节点长度和当前内容，小数据内存局部性好，但插入删除需搬移并可能连锁更新。新版本更多使用listpack等结构避免部分连锁问题。二者服务不同目标，具体在哪种逻辑类型中使用要结合Redis版本和编码阈值。",
+    "followUps": [
+      {
+        "question": "跳表层高如何产生？",
+        "answer": "插入节点时按固定概率随机提升层数，使高层节点指数减少，期望保持对数查找。"
+      },
+      {
+        "question": "紧凑列表为什么适合小集合？",
+        "answer": "连续内存省去大量指针和对象头，缓存局部性好；规模大或频繁中间修改时搬移成本会放大。"
+      }
+    ],
+    "pitfalls": [
+      "把ziplist和listpack当成名称不同但布局完全相同。"
+    ],
+    "tags": [
+      "Redis",
+      "跳表",
+      "压缩列表"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "压缩结构已随Redis版本演进，需按部署版本说明。"
+  },
+  {
+    "sourceId": "src-1017",
+    "shortAnswer": "Redis网络模型以事件循环处理非阻塞套接字，配合IO多路复用管理连接，并把命令执行保持为可预测的短任务。",
+    "fullAnswer": "主线程注册监听和客户端文件描述符，事件分派器根据可读、可写事件调用处理器，读取协议、解析命令、执行并写回。这样无需为每个连接创建线程，减少切换与锁竞争。较新版本可用IO线程并行读取和写出，但命令执行核心仍强调串行语义。慢命令、大Key、阻塞模块仍会拖慢其他请求，因此要监控事件循环延迟、限制单次工作量，并把持久化、释放等部分任务交给后台线程。",
+    "followUps": [
+      {
+        "question": "单线程为何还能支持高并发？",
+        "answer": "多数请求是内存短操作，非阻塞IO和多路复用减少等待与线程切换；高并发不等于并行执行命令。"
+      },
+      {
+        "question": "Redis 6的IO线程是否让命令并行？",
+        "answer": "主要并行网络读写与协议处理，常规命令执行仍保持核心串行；具体范围以版本配置为准。"
+      }
+    ],
+    "pitfalls": [
+      "把所有延迟归因于网络，忽略慢命令和大Key阻塞事件循环。"
+    ],
+    "tags": [
+      "Redis",
+      "网络模型",
+      "事件循环"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "IO线程能力随Redis版本和配置变化。"
+  },
+  {
+    "sourceId": "src-1018",
+    "shortAnswer": "Redis通过封装select、poll、epoll或kqueue等系统机制，把多个套接字的就绪事件交给单个事件循环处理。",
+    "fullAnswer": "事件库按平台选择可用的高效多路复用后端，将监听连接和客户端连接注册为可读或可写事件。内核返回就绪描述符后，Redis依次接受连接、读取RESP请求、执行命令并写响应；非阻塞套接字保证未就绪时不会卡住循环。IO多路复用只解决等待多个连接的问题，命令本身若扫描海量元素仍会阻塞。排障要区分连接数、内核事件等待、网络缓冲和命令执行时间。",
+    "followUps": [
+      {
+        "question": "epoll相比select的主要优势是什么？",
+        "answer": "epoll维护兴趣集合并返回就绪事件，避免每次复制和线性扫描整个描述符集合，更适合大量低活跃连接。"
+      },
+      {
+        "question": "就绪是否代表一次能读完整请求？",
+        "answer": "不代表。非阻塞读可能只得到部分字节，协议解析器需保留缓冲并等待后续事件。"
+      }
+    ],
+    "pitfalls": [
+      "误以为使用epoll就不会被大Key命令阻塞。"
+    ],
+    "tags": [
+      "Redis",
+      "IO多路复用",
+      "epoll"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体后端由操作系统和Redis构建配置决定。"
+  },
+  {
+    "sourceId": "src-1019",
+    "shortAnswer": "Redis与MySQL一致性通常采用旁路缓存：MySQL作为真值，事务提交后删除缓存，并对删除失败可靠重试。",
+    "fullAnswer": "写请求先修改MySQL并提交，再删除Redis键；读取未命中从MySQL加载并设置合理TTL。为防删除丢失，可把变更写入本地事务表、消息队列或订阅binlog，由消费者幂等失效缓存；定期对账修复异常。并发读可能在删除后回填旧值，可携带数据版本、短锁或二次删除缩小窗口。若必须线性一致，就不能只靠异步双写，应让关键读绕过缓存或采用支持一致事务的架构。",
+    "followUps": [
+      {
+        "question": "binlog订阅删除缓存有什么优点？",
+        "answer": "数据库提交与变更日志同源，业务写路径无需直接承担缓存操作，消费者可重试并统一处理多写入口。"
+      },
+      {
+        "question": "延迟双删能否保证强一致？",
+        "answer": "不能，它依赖时间窗口和延迟估计，只是工程补偿；长事务或异常调度仍可能留下旧值。"
+      }
+    ],
+    "pitfalls": [
+      "在数据库事务提交前删除缓存，回滚后造成不必要回源和竞态。"
+    ],
+    "tags": [
+      "Redis",
+      "MySQL",
+      "缓存一致性"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按最终一致的缓存旁路架构回答。"
+  },
+  {
+    "sourceId": "src-1020",
+    "shortAnswer": "跳表查找、插入、删除的期望复杂度为O(log n)，最坏可退化为O(n)，顺序范围遍历为O(m)。",
+    "fullAnswer": "随机层级让高层节点数量按概率递减，查找从最高层向右移动、越过目标前下沉，期望经过对数级节点。插入先记录每层前驱，再生成随机高度并修改指针；删除类似。空间期望为O(n)，范围查询定位起点后输出m个元素为O(log n+m)。复杂度依赖随机层分布，工程上还要考虑指针内存和缓存局部性，不能只拿平均复杂度与B树直接比较。",
+    "followUps": [
+      {
+        "question": "为什么最坏会到O(n)？",
+        "answer": "随机结果可能让高层索引分布极差，最终近似普通链表；虽然概率很低，但理论最坏仍是线性。"
+      },
+      {
+        "question": "跳表查询排名需要什么扩展？",
+        "answer": "节点可保存各层跨度，查找时累计跨越数量，Redis ZSet就利用跨度支持rank。"
+      }
+    ],
+    "pitfalls": [
+      "只回答O(log n)，不区分期望、最坏和范围输出成本。"
+    ],
+    "tags": [
+      "Redis",
+      "SkipList",
+      "复杂度"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按概率跳表的一般实现回答。"
+  },
+  {
+    "sourceId": "src-1021",
+    "shortAnswer": "MySQL主索引不采用跳表，主要因为B+树更匹配磁盘页、扇出高、树高低，并能稳定支持范围与页级管理。",
+    "fullAnswer": "跳表每节点多级指针、随机分布，内存实现简单且并发友好，但在外存中可能产生更多离散访问，难以充分利用固定大小页面。B+树一个页容纳大量键，内部节点扇出高，数次页访问即可定位海量数据；分裂合并、预读、范围叶链和缓冲池也有成熟实现。LSM或内存索引场景可能使用跳表，所以不是数据库永远不用，而是InnoDB这类页式OLTP引擎的主索引更适合B+树。",
+    "followUps": [
+      {
+        "question": "B+树范围查询为什么高效？",
+        "answer": "先用树定位起点，再沿有序叶页顺序扫描，能利用页缓存和顺序IO。"
+      },
+      {
+        "question": "内存数据库为什么更可能用跳表？",
+        "answer": "指针跳转没有磁盘随机IO代价，实现插入删除较简单，也更容易设计并发算法。"
+      }
+    ],
+    "pitfalls": [
+      "用“跳表不支持范围查询”解释，事实上它很擅长有序范围遍历。"
+    ],
+    "tags": [
+      "MySQL",
+      "B+树",
+      "SkipList"
+    ],
+    "difficulty": "中等",
+    "contextNote": "题目中的MysSQL按MySQL理解。"
+  },
+  {
+    "sourceId": "src-1022",
+    "shortAnswer": "一致性做法是以MySQL为权威，提交事务后失效Redis，并为失败、并发回填和延迟建立可重试的补偿链路。",
+    "fullAnswer": "读路径先查缓存，未命中查MySQL后回填；写路径不直接维护两份业务真值，而是更新数据库后删除缓存。删除动作可通过事务消息、outbox或binlog CDC可靠触发，消费按键幂等；缓存设置TTL并定期抽样对账。并发情况下旧查询可能晚到并覆盖新值，可在缓存值中保存版本，只有版本不倒退才写入。系统需明确容忍的不一致窗口，强一致读应直接查库或使用更强协调机制。",
+    "followUps": [
+      {
+        "question": "缓存更新失败如何告警？",
+        "answer": "记录变更ID、键、重试次数和最终死信，监控延迟与失败率，并提供可重放和人工修复入口。"
+      },
+      {
+        "question": "为什么不能把Redis也放进数据库本地事务？",
+        "answer": "两者没有天然共享的本地事务管理器，引入分布式事务成本高，缓存通常更适合可恢复的最终一致。"
+      }
+    ],
+    "pitfalls": [
+      "没有定义一致性SLO，只说最终会一致而无法验收。"
+    ],
+    "tags": [
+      "Redis",
+      "MySQL",
+      "最终一致性"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按通用双存储一致性问题回答。"
+  },
+  {
+    "sourceId": "src-1023",
+    "shortAnswer": "Redis适合热点缓存、计数器、排行榜、会话、限流、短期状态和轻量消息流，但不适合无界大对象或唯一真值存储。",
+    "fullAnswer": "热点数据缓存可降低数据库延迟；原子自增和过期适合计数与限流；ZSet支持排行榜和延时调度；Set适合去重；Hash保存小对象；Stream支持消费组。选择Redis要确认数据可否丢失、持久化和副本恢复时间、内存成本以及一致性要求。分布式锁需唯一令牌、超时和原子释放，仍不能代替数据库约束。大Key、热Key和高基数集合要拆分，并设计降级和回源保护。",
+    "followUps": [
+      {
+        "question": "Session放Redis有什么注意点？",
+        "answer": "设置合理TTL、处理续期和注销、保护会话ID，并评估Redis故障时是否允许用户重新登录。"
+      },
+      {
+        "question": "Redis能作为主数据库吗？",
+        "answer": "特定模型可以，但要明确持久化、备份、查询能力和成本；不能因快就默认取代关系数据库。"
+      }
+    ],
+    "pitfalls": [
+      "把Redis用于所有数据，忽略内存价格、查询能力和持久化边界。"
+    ],
+    "tags": [
+      "Redis",
+      "应用场景",
+      "架构"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按通用互联网服务场景回答。"
+  },
+  {
+    "sourceId": "src-1024",
+    "shortAnswer": "Redis快主要因内存访问、紧凑高效数据结构、事件驱动网络模型和短命令执行路径，而非单一的“单线程”。",
+    "fullAnswer": "数据常驻内存避免磁盘随机访问；SDS、哈希表、跳表和紧凑编码针对不同规模优化；非阻塞IO加多路复用高效管理连接；核心命令串行减少锁和切换。流水线、批量命令和协议设计还能减少网络往返。不过复杂度高的命令、大Key、持久化抖动、内存换页或网络拥塞都会降低性能。新版本可引入IO线程，但不改变需要控制命令单次工作量的原则。",
+    "followUps": [
+      {
+        "question": "单线程模型的优势和限制是什么？",
+        "answer": "简化共享状态与原子命令语义，减少锁竞争；限制是慢命令会阻塞其他请求，无法把单个实例命令执行扩到所有核心。"
+      },
+      {
+        "question": "Pipeline为什么能提速？",
+        "answer": "它批量发送多条命令，减少客户端和服务器之间往返次数，但不会让命令自动并行。"
+      }
+    ],
+    "pitfalls": [
+      "只关注QPS，不测P99延迟和持久化、复制时的抖动。"
+    ],
+    "tags": [
+      "Redis",
+      "性能",
+      "事件循环"
+    ],
+    "difficulty": "中等",
+    "contextNote": "性能特征依版本、硬件、命令与数据规模，应实测。"
+  },
+  {
+    "sourceId": "src-1025",
+    "shortAnswer": "Redis逻辑结构包括String、Hash、List、Set、ZSet、Stream，并提供Bitmap、HyperLogLog、Geo等专用操作。",
+    "fullAnswer": "String是二进制安全字节序列，可做缓存与原子计数；Hash按字段组织对象；List维护双端顺序；Set提供唯一成员及交并差；ZSet在唯一成员上附分值形成排序；Stream保存可消费、可确认的有序消息。Bitmap基于String位操作，HyperLogLog用较小空间估算基数，Geo在地理位置上提供附近查询。类型选择必须结合时间复杂度、元素上限、过期粒度和集群跨槽限制。",
+    "followUps": [
+      {
+        "question": "Hash和JSON String如何选？",
+        "answer": "需局部字段读写可用Hash；整体序列化读取且结构复杂可用String，但要考虑网络体积与并发覆盖。"
+      },
+      {
+        "question": "Set求交集在集群中有什么限制？",
+        "answer": "相关键需位于同一槽才能直接执行多键命令，否则应使用hash tag、应用侧计算或调整模型。"
+      }
+    ],
+    "pitfalls": [
+      "在大集合上直接执行高复杂度集合运算，阻塞实例。"
+    ],
+    "tags": [
+      "Redis",
+      "数据结构",
+      "集群"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Redis公开命令语义回答。"
+  },
+  {
+    "sourceId": "src-1026",
+    "shortAnswer": "SkipList是用随机多层前向指针构建的有序结构，以较简单实现获得期望O(log n)的查询、插入和删除。",
+    "fullAnswer": "底层第一层包含全部节点并保持有序，越高层只抽取部分节点作为快速通道。搜索从最高层向右，下一节点超过目标时下降一层；插入记录各层前驱，随机生成节点高度后连接；删除更新命中层指针。它天然支持有序遍历和范围查询，算法实现比平衡树直观，但需要额外指针并依赖随机层级。Redis在ZSet大编码中结合跳表和字典，同时兼顾排序与成员查找。",
+    "followUps": [
+      {
+        "question": "跳表与红黑树相比有什么特点？",
+        "answer": "两者平均或保证对数操作；跳表范围遍历和并发实现较直观，红黑树有确定高度界限且指针数量通常较少。"
+      },
+      {
+        "question": "概率参数如何影响空间？",
+        "answer": "晋升概率越高，平均层数和指针更多、搜索步数可能减少；需在空间与查找间折中。"
+      }
+    ],
+    "pitfalls": [
+      "误以为随机结构导致结果顺序随机，实际上底层链表始终有序。"
+    ],
+    "tags": [
+      "Redis",
+      "SkipList",
+      "有序结构"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按通用跳表与Redis使用场景回答。"
+  },
+  {
+    "sourceId": "src-1027",
+    "shortAnswer": "ZSet在较大规模时通常用字典加跳表：字典按成员查分值，跳表按分值和成员有序支持范围与排名。",
+    "fullAnswer": "每个成员唯一并关联score。字典让按成员查询、更新接近O(1)，跳表让插入删除和按分值定位期望O(log n)，叶层顺序遍历适合范围输出；跨度字段用于计算排名。小规模、短元素时Redis可能采用listpack等紧凑编码节省指针开销，达到阈值再转换。相同分值按成员字节序决定顺序。具体编码名称和阈值随版本及配置变化，业务不应依赖内部结构。",
+    "followUps": [
+      {
+        "question": "为什么不用一个跳表完成所有操作？",
+        "answer": "按成员查找时若不知道score，单靠按score排序的跳表难以O(log n)定位，字典补足这一访问模式。"
+      },
+      {
+        "question": "修改score如何处理？",
+        "answer": "通常先在有序结构中移除旧位置再按新score插入，并同步字典记录，整体期望O(log n)。"
+      }
+    ],
+    "pitfalls": [
+      "把ZSet说成只使用跳表，遗漏小对象编码和字典。"
+    ],
+    "tags": [
+      "Redis",
+      "ZSet",
+      "SkipList"
+    ],
+    "difficulty": "中等",
+    "contextNote": "内部编码按现代Redis概括，细节以目标版本为准。"
+  },
+  {
+    "sourceId": "src-1028",
+    "shortAnswer": "Redis解决低延迟访问、数据库减压和跨实例共享状态等问题，但引入一致性、容量与运维成本。",
+    "fullAnswer": "热点查询放入内存可显著减少数据库IO；原子命令适合计数、限流与简单协调；丰富结构支持排行榜、会话和去重；集中式缓存让多应用实例共享数据。使用前应确认访问热点、可接受陈旧时间和回源能力，避免为了“快”缓存低复用数据。引入Redis后必须处理缓存穿透、雪崩、热Key、大Key、持久化与故障切换，并设置命中率、内存和延迟监控。",
+    "followUps": [
+      {
+        "question": "哪些数据不值得缓存？",
+        "answer": "更新频繁且读取少、必须强一致、体积过大或计算本身很便宜的数据，缓存收益可能低于复杂度。"
+      },
+      {
+        "question": "Redis故障时系统如何降级？",
+        "answer": "限制回源并发、保留本地短缓存或返回可接受的降级结果，优先保护数据库并逐步恢复流量。"
+      }
+    ],
+    "pitfalls": [
+      "只计算缓存命中收益，不计算一致性和故障恢复成本。"
+    ],
+    "tags": [
+      "Redis",
+      "缓存",
+      "系统设计"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按选择Redis作为基础设施的动机回答。"
+  },
+  {
+    "sourceId": "src-1029",
+    "shortAnswer": "与Redis对标需按场景区分：Memcached用于简单缓存，KeyDB或Dragonfly强调兼容与多核，数据库和专业MQ则替代其部分用途。",
+    "fullAnswer": "Memcached模型简单、纯缓存成熟，但数据结构和持久化能力少；KeyDB、Dragonfly等提供Redis协议兼容与不同并发实现，迁移仍要验证命令、复制和故障语义；Hazelcast等更偏分布式内存数据网格。若需求是持久KV、搜索或可靠消息，应比较RocksDB类存储、数据库或Kafka/RocketMQ，而不是强行找一对一产品。选型需用真实命令集、数据规模、P99、故障切换、生态和许可做测试。",
+    "followUps": [
+      {
+        "question": "协议兼容是否意味着可无缝替换？",
+        "answer": "不意味着。模块、Lua、事务、复制、集群拓扑、持久化和边界错误可能不同，必须跑兼容与故障测试。"
+      },
+      {
+        "question": "单纯缓存为什么可能选Memcached？",
+        "answer": "模型简单、水平分片成熟，若只需短期KV且不需要复杂结构和持久化，运维边界更清晰。"
+      }
+    ],
+    "pitfalls": [
+      "仅凭基准峰值QPS替换核心缓存，不验证语义兼容。"
+    ],
+    "tags": [
+      "Redis",
+      "技术选型",
+      "缓存系统"
+    ],
+    "difficulty": "中等",
+    "contextNote": "“对标”范围有歧义，按不同Redis使用场景分类比较。"
+  },
+  {
+    "sourceId": "src-1030",
+    "shortAnswer": "字段注入隐藏必需依赖、难以构造不可变对象，也让单元测试和循环依赖问题更晚暴露，因此更推荐构造器注入。",
+    "fullAnswer": "字段注入由容器在对象构造后反射写入，类的构造函数看不出必需依赖，脱离容器创建时对象可能处于不完整状态；字段难以声明为final，测试常需反射或启动容器。构造器注入把依赖作为显式契约，创建完成即满足不变量，依赖过多也能暴露职责膨胀。可选依赖可谨慎使用setter。框架虽支持@Autowired字段，但“能用”不等于设计合适。",
+    "followUps": [
+      {
+        "question": "构造器很多参数怎么办？",
+        "answer": "先检查类是否承担过多职责；不要仅为缩短参数把依赖藏回字段，可拆分协作对象或聚合稳定配置。"
+      },
+      {
+        "question": "构造器注入能解决循环依赖吗？",
+        "answer": "它通常会尽早暴露循环，正确做法是重构职责；Lazy只是特定情况下延迟，不应掩盖设计问题。"
+      }
+    ],
+    "pitfalls": [
+      "为了测试方便把依赖字段改成public，进一步破坏封装。"
+    ],
+    "tags": [
+      "Spring",
+      "依赖注入",
+      "设计"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Spring推荐的构造器注入实践回答。"
+  },
+  {
+    "sourceId": "src-1031",
+    "shortAnswer": "Spring MVC流程是DispatcherServlet接收请求，经HandlerMapping找到处理器，由HandlerAdapter调用Controller，再解析返回值并生成响应。",
+    "fullAnswer": "请求先进入过滤器链和DispatcherServlet；HandlerMapping根据路径、方法等得到HandlerExecutionChain，拦截器前置处理后，HandlerAdapter负责参数解析、数据绑定、校验并调用控制器。返回值可由视图解析器渲染页面，也可由HttpMessageConverter序列化为JSON；异常交给HandlerExceptionResolver。最后执行拦截器收尾。实际顺序受异步请求、异常和Spring版本影响，排查应结合映射日志与Trace。",
+    "followUps": [
+      {
+        "question": "HandlerMapping为什么不直接调用Controller？",
+        "answer": "映射只负责定位处理器，HandlerAdapter屏蔽不同处理器类型和调用方式，使DispatcherServlet保持统一流程。"
+      },
+      {
+        "question": "过滤器和拦截器在哪些位置？",
+        "answer": "过滤器属于Servlet容器，包围DispatcherServlet；拦截器位于Spring MVC处理器调用前后，能获取Handler信息。"
+      }
+    ],
+    "pitfalls": [
+      "遗漏异常解析和消息转换，认为所有返回值都必须经过视图解析。"
+    ],
+    "tags": [
+      "Spring MVC",
+      "请求流程",
+      "DispatcherServlet"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring MVC注解控制器的典型同步流程回答。"
+  },
+  {
+    "sourceId": "src-1032",
+    "shortAnswer": "Spring AOP通常基于代理：有接口时可用JDK代理，无接口或指定策略时用类代理，在方法调用边界执行通知。",
+    "fullAnswer": "容器创建Bean后由自动代理创建器判断切点，匹配时返回代理对象。JDK代理实现接口，类代理通常借助CGLIB或Byte Buddy类机制生成子类；调用进入拦截器链，按顺序执行前置、环绕、返回或异常通知。代理边界导致this自调用、private和final方法常无法被拦截。若使用AspectJ编译期或加载期织入，机制不同。具体默认代理策略与字节码库随Spring版本变化。",
+    "followUps": [
+      {
+        "question": "为什么this调用会绕过AOP？",
+        "answer": "对象内部this调用直接落到目标实例，没有重新经过容器暴露的代理对象，所以拦截器链不执行。"
+      },
+      {
+        "question": "AOP代理何时创建？",
+        "answer": "通常在Bean后处理阶段判断并包装，循环依赖时可能需要提前暴露代理引用，细节依容器流程。"
+      }
+    ],
+    "pitfalls": [
+      "认为Spring AOP能拦截任意方法和对象创建。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP",
+      "动态代理"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "区分Spring代理式AOP与AspectJ织入，并提示版本差异。"
+  },
+  {
+    "sourceId": "src-1033",
+    "shortAnswer": "OOP用对象封装业务职责，AOP补充处理跨多个对象重复出现的横切关注点，二者是互补而非替代关系。",
+    "fullAnswer": "OOP按类和对象组织领域行为，通过封装、继承或组合建立主业务结构；日志、事务、鉴权、指标等规则往往横跨许多对象，若散落在每个方法中会重复且难统一。AOP用切点选连接点，用通知包装调用，使这些关注点集中维护。AOP应保持可见、可测试和边界明确，核心业务规则不宜隐藏在切面中；同时代理机制只覆盖经过代理的调用，不具备全局魔法。",
+    "followUps": [
+      {
+        "question": "什么逻辑适合AOP？",
+        "answer": "跨多个模块、规则一致且能在清晰调用边界执行的技术性关注点，如指标、事务和审计。"
+      },
+      {
+        "question": "为什么业务流程不应大量放切面？",
+        "answer": "执行顺序和依赖会变得隐式，调试与测试困难，且切点变化可能无声改变业务行为。"
+      }
+    ],
+    "pitfalls": [
+      "把AOP理解为面向对象的替代品，导致职责边界混乱。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP",
+      "OOP"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按软件设计思想关系回答。"
+  },
+  {
+    "sourceId": "src-1034",
+    "shortAnswer": "Spring AOP包含切面、切点、连接点、通知和织入等概念，主要通过运行时代理增强Spring Bean的方法调用。",
+    "fullAnswer": "切面封装横切规则，切点描述哪些方法匹配，通知定义何时做什么，包括前置、返回、异常、后置和环绕；连接点在Spring AOP中主要是方法执行；织入是把增强应用到目标对象的过程。代理对象组织MethodInterceptor链并调用目标。它适合事务、日志、鉴权和指标，但存在自调用、非Bean对象、final/private方法等边界。通知顺序应显式配置并测试，避免多个切面相互依赖。",
+    "followUps": [
+      {
+        "question": "环绕通知有什么风险？",
+        "answer": "必须正确调用proceed并处理参数、返回值和异常；漏调会阻断目标方法，多调会重复执行副作用。"
+      },
+      {
+        "question": "切点如何避免过宽？",
+        "answer": "优先限定包、注解和方法语义，建立命中测试与启动日志，避免仅用模糊名称匹配。"
+      }
+    ],
+    "pitfalls": [
+      "切点表达式过宽，把基础库和管理接口意外纳入事务或日志。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP概念",
+      "切面"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring代理式AOP公共概念回答。"
+  },
+  {
+    "sourceId": "src-1035",
+    "shortAnswer": "Bean生命周期是否完整取决于作用域：单例由容器统一创建并在关闭时销毁，prototype通常创建后不由容器负责销毁。",
+    "fullAnswer": "singleton Bean通常在容器启动或首次访问时实例化，依次完成属性填充、Aware回调、BeanPostProcessor前置、初始化回调和后置处理，容器关闭时调用销毁回调。prototype每次获取创建新实例，也经历创建与初始化，但容器交付后通常不跟踪，因此不会自动调用其销毁方法。request、session等Web作用域由对应上下文结束触发销毁。代理作用域时，注入的可能是代理而非实际实例。",
+    "followUps": [
+      {
+        "question": "prototype Bean如何释放资源？",
+        "answer": "由使用方显式close，或通过自定义管理器跟踪并释放；不能假设容器关闭时自动逐个销毁。"
+      },
+      {
+        "question": "单例一定在启动时创建吗？",
+        "answer": "默认常是预实例化，但lazy、条件配置或获取时机可改变；应区分作用域与初始化时机。"
+      }
+    ],
+    "pitfalls": [
+      "把prototype理解为生命周期流程完全不存在。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean生命周期",
+      "作用域"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring容器通用作用域语义回答。"
+  },
+  {
+    "sourceId": "src-1036",
+    "shortAnswer": "Bean生命周期依次包括定义读取、实例化、依赖注入、Aware回调、后处理、初始化、使用和销毁。",
+    "fullAnswer": "容器先解析BeanDefinition，再选择构造器实例化并填充依赖；随后执行BeanNameAware等容器感知接口，BeanPostProcessor的初始化前处理，@PostConstruct、InitializingBean或自定义init方法，再执行初始化后处理，AOP代理常在此形成。使用期间由作用域管理，容器关闭时单例Bean按@PreDestroy、DisposableBean或destroy方法清理。实例化前后处理器、循环依赖和代理会让细节更复杂，回调顺序应以当前Spring版本验证。",
+    "followUps": [
+      {
+        "question": "BeanFactoryPostProcessor和BeanPostProcessor差在哪？",
+        "answer": "前者修改Bean定义，发生在普通Bean实例化前；后者围绕Bean实例的初始化处理，可包装代理。"
+      },
+      {
+        "question": "多个初始化回调顺序如何确认？",
+        "answer": "不要凭记忆依赖隐式顺序，应查目标Spring版本文档并用小测试验证，业务上尽量只保留一种。"
+      }
+    ],
+    "pitfalls": [
+      "在初始化回调中启动不可回滚的外部任务，失败后留下半初始化资源。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean生命周期",
+      "容器"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "生命周期扩展点很多，具体顺序以项目Spring版本为准。"
+  },
+  {
+    "sourceId": "src-1037",
+    "shortAnswer": "注解和XML最终都会解析为BeanDefinition，容器再按同一创建流程实例化、装配和初始化Bean。",
+    "fullAnswer": "XML由相应BeanDefinitionReader读取元素和属性；组件扫描解析@Component等注解，配置类处理器解析@Bean、@Import和条件注解。它们产出的BeanDefinition包含类、作用域、构造参数、属性、初始化方法等元数据，注册到BeanDefinitionRegistry。后续BeanFactory按依赖解析规则创建实例，因此配置来源不同但容器核心流程一致。差异主要在解析器、覆盖顺序、条件能力和可读性，混用时需明确Bean名称冲突策略。",
+    "followUps": [
+      {
+        "question": "@Autowired信息也放在BeanDefinition里吗？",
+        "answer": "部分定义元数据会进入BeanDefinition，但字段和方法注入常由AutowiredAnnotationBeanPostProcessor在实例阶段解析执行。"
+      },
+      {
+        "question": "XML是否已经不能用了？",
+        "answer": "仍受支持，适合外部化或遗留配置；新项目常偏向Java配置，但应按维护和动态需求选择。"
+      }
+    ],
+    "pitfalls": [
+      "认为所有注解都在编译期生成对象，忽略运行时容器处理器。"
+    ],
+    "tags": [
+      "Spring",
+      "BeanDefinition",
+      "配置"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体解析器和覆盖规则随Spring版本与Boot配置变化。"
+  },
+  {
+    "sourceId": "src-1038",
+    "shortAnswer": "Spring面试应围绕IoC容器、Bean生命周期、AOP代理、事务、MVC和Boot自动配置形成机制化回答。",
+    "fullAnswer": "若题目只是“Spring面试题”，可先建立知识主线：BeanDefinition如何进入容器，依赖如何解析，Bean怎样经过后处理器成为代理；AOP如何组织拦截器链，声明式事务如何绑定资源；MVC如何从DispatcherServlet映射到控制器；Boot如何通过条件配置组装基础设施。回答每块都应包含使用场景、关键扩展点、失效边界和版本差异，而不是罗列注解。可用一个请求从启动到事务提交的链路串联理解。",
+    "followUps": [
+      {
+        "question": "复习Spring最容易遗漏什么？",
+        "answer": "只背概念而不追踪对象何时被创建、代理从哪里出现、异常如何影响事务，遇到变体题就难以推导。"
+      },
+      {
+        "question": "如何证明掌握了机制？",
+        "answer": "能从日志或最小示例解释某个Bean为何未装配、事务为何失效，并指出对应扩展点和修复。"
+      }
+    ],
+    "pitfalls": [
+      "把汇总型标题回答成零散题目清单，没有建立因果链。"
+    ],
+    "tags": [
+      "Spring",
+      "面试复习",
+      "框架原理"
+    ],
+    "difficulty": "中等",
+    "contextNote": "原题是汇总型标题，按“如何系统讲解Spring核心面试知识”转换。"
+  },
+  {
+    "sourceId": "src-1039",
+    "shortAnswer": "双重检查单例需将实例声明为volatile，在同步块内再次判空，避免重复创建和未完全初始化对象被发布。",
+    "fullAnswer": "典型流程是先读取volatile实例到局部变量，非空直接返回；为空时锁住类级对象，再次检查，仍为空才new并赋值。第一次检查减少初始化后的锁开销，第二次防止多个线程依次进入锁后重复创建。volatile禁止构造初始化与引用发布发生危险重排，并保证可见性。更简单可靠的选择是静态内部类或枚举单例；若涉及序列化、反射或多类加载器，还要明确“单例”的边界。",
+    "followUps": [
+      {
+        "question": "为什么必须二次判空？",
+        "answer": "多个线程可能都通过第一次检查，锁只让它们依次进入；没有第二次检查，后进入者仍会再次创建实例。"
+      },
+      {
+        "question": "枚举单例有什么优势？",
+        "answer": "语言层面处理线程安全与序列化，并较难被反射破坏；但继承和延迟参数化能力有限。"
+      }
+    ],
+    "pitfalls": [
+      "遗漏volatile，代码表面加锁却仍可能错误发布。"
+    ],
+    "tags": [
+      "Java",
+      "单例模式",
+      "并发"
+    ],
+    "difficulty": "中等",
+    "contextNote": "题目归在Spring模块，但按Java双重检查单例实现回答。"
+  },
+  {
+    "sourceId": "src-1040",
+    "shortAnswer": "JDK动态代理代理接口，类代理通过生成子类增强具体类；后者受final类和final方法限制。",
+    "fullAnswer": "JDK Proxy运行时生成目标接口的实现，调用统一进入InvocationHandler，要求调用方通过接口使用。Spring的类代理传统上基于CGLIB，现代版本可能整合不同字节码实现，本质是创建目标类子类并拦截可覆盖方法，无需接口但不能增强final/private边界。两者都可能遇到this自调用绕过、代理类型判断和equals语义问题。选择应面向接口设计优先，具体默认策略按Spring版本与配置确认。",
+    "followUps": [
+      {
+        "question": "有接口时Spring一定使用JDK代理吗？",
+        "answer": "历史默认常如此，但配置可强制类代理，不同Spring版本策略也可能变化，应看实际代理类型。"
+      },
+      {
+        "question": "类代理需要调用目标构造器吗？",
+        "answer": "生成子类仍受对象实例化机制影响，框架可结合Objenesis等优化；不能假设所有版本都完全相同。"
+      }
+    ],
+    "pitfalls": [
+      "声称CGLIB一定比JDK代理快，未用当前JVM与调用模式基准测试。"
+    ],
+    "tags": [
+      "Spring",
+      "动态代理",
+      "JDK Proxy"
+    ],
+    "difficulty": "中等",
+    "contextNote": "CGLIB集成和默认代理策略随Spring版本变化。"
+  },
+  {
+    "sourceId": "src-1041",
+    "shortAnswer": "Spring AOP由自动代理创建器识别Advisor，为Bean生成代理，并在调用时执行匹配的拦截器链。",
+    "fullAnswer": "容器收集切点与通知并包装成Advisor，Bean后处理阶段判断目标类是否匹配；匹配Bean返回JDK接口代理或类代理。方法调用进入代理后，再做方法级匹配并依次执行MethodInterceptor，最终调用目标。声明式事务就是典型拦截器。this自调用、非容器对象、private/final方法常绕过增强。AspectJ织入不依赖同样的代理边界，应单独说明。",
+    "followUps": [
+      {
+        "question": "多个切面顺序怎么控制？",
+        "answer": "使用Ordered或@Order表达优先级，并以集成测试验证嵌套顺序和异常路径。"
+      },
+      {
+        "question": "代理对象何时暴露？",
+        "answer": "通常在初始化后处理阶段形成；循环依赖可能提前暴露引用，具体依容器版本和配置。"
+      }
+    ],
+    "pitfalls": [
+      "只会说动态代理，不解释Advisor与拦截器链如何协作。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP原理",
+      "代理"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按Spring代理式AOP回答。"
+  },
+  {
+    "sourceId": "src-1042",
+    "shortAnswer": "JDBC步骤是加载驱动、获取Connection、创建预编译语句、绑定参数、执行并读取结果，最后可靠关闭资源和事务。",
+    "fullAnswer": "现代JDBC驱动通常通过服务发现自动加载。应用从DataSource连接池获取Connection，关闭自动提交后用PreparedStatement绑定参数，执行query或update并遍历ResultSet；成功commit，异常rollback。ResultSet、Statement和Connection都应使用try-with-resources关闭，连接的close通常是归还池。必须设置查询和事务超时，使用占位参数防注入，并注意批处理、隔离级别和异常后连接状态。",
+    "followUps": [
+      {
+        "question": "为什么优先PreparedStatement？",
+        "answer": "参数与SQL结构分离可防大多数注入，还可能复用执行计划并正确处理类型。"
+      },
+      {
+        "question": "连接池中的close会真正断开吗？",
+        "answer": "通常只是归还池并重置状态；实现需确保事务、隔离级别和会话变量不会泄漏给下一请求。"
+      }
+    ],
+    "pitfalls": [
+      "异常路径未rollback或关闭连接，导致池耗尽和长事务。"
+    ],
+    "tags": [
+      "JDBC",
+      "数据库",
+      "事务"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按DataSource连接池的常见生产实践回答。"
+  },
+  {
+    "sourceId": "src-1043",
+    "shortAnswer": "原生MyBatis查询需要定义Mapper接口与SQL映射，配置数据源和SqlSessionFactory，再通过SqlSession或代理Mapper执行。",
+    "fullAnswer": "先创建实体或DTO和Mapper接口，在XML中用namespace、select及resultMap描述SQL与映射，或用注解声明简单SQL；配置MyBatis环境、类型别名和数据源，构建SqlSessionFactory。调用时从SqlSession获取Mapper，执行方法后按需要提交，并在finally或try-with-resources关闭会话。参数使用#{ }绑定，动态表名等不得直接信任输入。Spring集成时SqlSessionTemplate通常代理会话和事务，不能手动混用错误生命周期。",
+    "followUps": [
+      {
+        "question": "resultType和resultMap如何选？",
+        "answer": "简单同名字段可用resultType；列名、嵌套对象或构造映射复杂时用resultMap更明确。"
+      },
+      {
+        "question": "Mapper接口没有实现类为何能调用？",
+        "answer": "MyBatis创建动态代理，把方法元数据映射到MappedStatement，再由执行器运行SQL并转换结果。"
+      }
+    ],
+    "pitfalls": [
+      "用${}拼接用户参数造成SQL注入。"
+    ],
+    "tags": [
+      "MyBatis",
+      "Mapper",
+      "SQL映射"
+    ],
+    "difficulty": "中等",
+    "contextNote": "“原生”按不依赖MyBatis-Plus的标准MyBatis用法理解。"
+  },
+  {
+    "sourceId": "src-1044",
+    "shortAnswer": "MyBatis保留SQL控制力，同时替代JDBC的连接样板、参数绑定和结果映射，并提供动态SQL、缓存和插件扩展。",
+    "fullAnswer": "相比手写JDBC，MyBatis把语句配置为MappedStatement，通过Executor管理执行，自动将Java参数绑定到PreparedStatement，并把ResultSet映射为对象；XML动态SQL便于处理条件查询，Mapper代理减少DAO样板。它不是全自动ORM，复杂关联和SQL优化仍由开发者负责。一级缓存默认与SqlSession相关，二级缓存需要谨慎处理一致性。生产还要防止N+1、过宽查询、${}注入和分页插件方言问题。",
+    "followUps": [
+      {
+        "question": "MyBatis和JPA最大取舍是什么？",
+        "answer": "MyBatis更直接控制SQL，适合复杂查询；JPA强调对象关系和状态管理，开发效率高但需理解生成SQL与持久化上下文。"
+      },
+      {
+        "question": "一级缓存为什么可能读到旧值？",
+        "answer": "同一会话缓存查询结果，若外部更新未被当前会话感知可能陈旧；写操作和会话边界会影响清理。"
+      }
+    ],
+    "pitfalls": [
+      "把MyBatis当成无需理解SQL的ORM工具。"
+    ],
+    "tags": [
+      "MyBatis",
+      "JDBC",
+      "持久层"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按标准MyBatis能力回答。"
+  },
+  {
+    "sourceId": "src-1045",
+    "shortAnswer": "MyBatis优势在于SQL透明可控、参数和结果映射成熟、动态SQL灵活，并以插件与Spring集成保持较低侵入。",
+    "fullAnswer": "SQL单独呈现便于数据库工程师审查执行计划，也能针对复杂报表和厂商特性优化；#{ }负责安全参数绑定，resultMap处理列与对象结构差异；Mapper代理让接口即DAO，动态SQL减少手工拼接；插件可扩展执行器、参数、结果和语句处理环节。代价是SQL与对象模型需人工维护，跨数据库兼容和批量加载要自己验证。评价“做得好”应结合项目证据，如慢SQL治理和映射复杂度，而非泛泛说方便。",
+    "followUps": [
+      {
+        "question": "插件拦截哪些核心对象？",
+        "answer": "常见为Executor、StatementHandler、ParameterHandler和ResultSetHandler，具体签名以版本文档为准。"
+      },
+      {
+        "question": "动态SQL有什么风险？",
+        "answer": "条件复杂后难读且测试组合爆炸，${}还可能注入；应拆分语义、覆盖关键分支并检查最终SQL。"
+      }
+    ],
+    "pitfalls": [
+      "只谈减少代码，不提SQL维护和测试成本。"
+    ],
+    "tags": [
+      "MyBatis",
+      "动态SQL",
+      "设计"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按MyBatis核心设计优势回答。"
+  },
+  {
+    "sourceId": "src-1046",
+    "shortAnswer": "#{ }使用预编译参数占位，通常安全并保留类型处理；${ }是原样文本替换，只应用于受白名单控制的SQL结构。",
+    "fullAnswer": "#{name}会生成?并由TypeHandler设置参数，字符串引号与转义交给驱动处理，能显著降低注入风险。${name}在SQL解析前直接拼接，适合无法参数化的表名、列名或排序方向，但输入必须映射到代码内白名单，绝不能直接接收用户文本。值条件、LIMIT参数等优先#{ }。调试时应看最终SQL和参数分开日志，避免误以为#{ }是在客户端简单加引号。",
+    "followUps": [
+      {
+        "question": "ORDER BY列名怎么安全动态化？",
+        "answer": "将外部枚举映射为固定列名片段，再用${}插入；未知值拒绝或使用默认，不直接拼用户输入。"
+      },
+      {
+        "question": "LIKE模糊查询必须用${}吗？",
+        "answer": "不需要，可在Java构造带通配符的参数或用数据库拼接函数，仍通过#{ }绑定。"
+      }
+    ],
+    "pitfalls": [
+      "为了省事把所有动态值改成${}，引入注入漏洞。"
+    ],
+    "tags": [
+      "MyBatis",
+      "SQL注入",
+      "参数绑定"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按MyBatis占位符语义回答。"
+  },
+  {
+    "sourceId": "src-1047",
+    "shortAnswer": "MyBatis常见模式有建造者、工厂、代理、模板方法、责任链和装饰或组合，分别服务配置、创建、Mapper调用与插件扩展。",
+    "fullAnswer": "SqlSessionFactoryBuilder逐步解析配置构建SqlSessionFactory，工厂再创建SqlSession；Mapper接口由动态代理把方法转成MappedStatement调用；Executor、StatementHandler等抽象通过模板与策略组织不同执行路径；插件用Interceptor链层层包装目标对象，体现责任链与代理。Cache实现还能组合装饰出淘汰、同步等能力。回答设计模式应落到具体角色与解决的问题，避免把类名机械贴标签，因为内部结构随版本可能调整。",
+    "followUps": [
+      {
+        "question": "Mapper代理如何知道要执行哪条SQL？",
+        "answer": "通常以接口全限定名加方法名定位MappedStatement，再完成参数转换和执行。"
+      },
+      {
+        "question": "插件为什么要谨慎使用？",
+        "answer": "它侵入核心调用链，顺序和兼容性会影响全局；需限制匹配范围并做版本回归。"
+      }
+    ],
+    "pitfalls": [
+      "罗列十几种模式却无法指出参与者和收益。"
+    ],
+    "tags": [
+      "MyBatis",
+      "设计模式",
+      "源码"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "模式归类存在解释空间，以目标MyBatis版本源码为准。"
+  },
+  {
+    "sourceId": "src-1048",
+    "shortAnswer": "MyBatis-Plus是在MyBatis之上提供通用CRUD、条件构造、分页和代码生成，不替代MyBatis底层SQL映射能力。",
+    "fullAnswer": "MyBatis保留Mapper、XML、执行器和插件体系，开发者明确编写SQL；MyBatis-Plus基于这些扩展BaseMapper、Wrapper、Service等，减少单表重复代码，并提供逻辑删除、乐观锁、多租户等插件。复杂查询仍可写原生MyBatis SQL。引入后要检查自动生成条件、字段填充、分页方言和插件顺序，避免Wrapper由不可信字段拼接。版本必须与Spring Boot、MyBatis和JDK兼容。",
+    "followUps": [
+      {
+        "question": "复杂SQL能否继续用XML？",
+        "answer": "可以，MyBatis-Plus不阻止标准Mapper XML，自定义语句仍走MyBatis体系。"
+      },
+      {
+        "question": "通用CRUD有什么隐患？",
+        "answer": "无条件update/delete、字段覆盖和租户条件遗漏可能影响大量数据，应启用拦截与审计并写测试。"
+      }
+    ],
+    "pitfalls": [
+      "认为引入MyBatis-Plus后完全不需要理解MyBatis和SQL。"
+    ],
+    "tags": [
+      "MyBatis-Plus",
+      "MyBatis",
+      "ORM"
+    ],
+    "difficulty": "基础",
+    "contextNote": "功能和兼容矩阵以使用版本文档为准。"
+  },
+  {
+    "sourceId": "src-1049",
+    "shortAnswer": "静态代理在编译期手写代理类，动态代理在运行期生成代理或拦截器，前者直观但类膨胀，后者灵活但边界更隐式。",
+    "fullAnswer": "静态代理与目标实现同一接口，在方法前后增加逻辑，调用链清晰、易调试，但每个接口或变化都要维护代理代码。动态代理按接口或类元数据生成代理，把多个目标的通用逻辑集中到InvocationHandler或拦截器，适合AOP与框架扩展。它增加运行时类型、反射或字节码机制，也受接口、final、自调用等限制。两者本质都控制对目标的访问，不应只用性能作唯一判断。",
+    "followUps": [
+      {
+        "question": "静态代理能实现AOP吗？",
+        "answer": "能实现局部横切，但需为目标显式编写代理；目标多时维护成本高，自动切点能力弱。"
+      },
+      {
+        "question": "动态代理一定使用反射吗？",
+        "answer": "JDK代理入口常经InvocationHandler，但框架也可生成字节码和方法句柄；实现方式不唯一。"
+      }
+    ],
+    "pitfalls": [
+      "把装饰器、代理和适配器完全混为一谈。"
+    ],
+    "tags": [
+      "Spring",
+      "代理模式",
+      "AOP"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Java代理机制回答。"
+  },
+  {
+    "sourceId": "src-1050",
+    "shortAnswer": "动态代理是在运行期根据接口或类生成代理对象，把方法调用转交统一处理器，从而复用横切逻辑。",
+    "fullAnswer": "JDK Proxy接收接口集合和InvocationHandler，生成实现这些接口的类；调用方法时处理器可鉴权、记录、开启事务，再反射或方法句柄调用目标。无接口类可通过字节码生成子类代理，但受final和构造等限制。代理必须由调用方实际持有并经过，目标内部this调用不会自动拦截。还需正确传播返回值、受检异常、equals/hashCode和上下文，避免代理改变业务语义。",
+    "followUps": [
+      {
+        "question": "动态代理与反射是什么关系？",
+        "answer": "反射可用于转调目标方法，但动态代理还包括运行时生成类型与路由；字节码代理不必完全依赖反射调用。"
+      },
+      {
+        "question": "代理对象能否强转为目标具体类？",
+        "answer": "JDK接口代理通常不能；子类代理通常可以，但应依赖接口而非利用这一差异。"
+      }
+    ],
+    "pitfalls": [
+      "异常被统一包装后丢失原始类型，破坏调用方重试逻辑。"
+    ],
+    "tags": [
+      "Java",
+      "动态代理",
+      "代理模式"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按JDK代理和类代理两类概括。"
+  },
+  {
+    "sourceId": "src-1051",
+    "shortAnswer": "静态代理可以实现AOP思想，但需为每类目标显式包装，缺少自动切点和大规模织入能力。",
+    "fullAnswer": "让代理与目标实现相同接口，在调用前后加入日志、事务或鉴权，就是将横切逻辑从目标分离。它适合对象少、边界稳定、需要强可读性的场景，也常用于解释AOP原理。目标和方法增长后，代理类重复、组合顺序与生命周期管理迅速变复杂；Spring AOP用容器和动态代理自动匹配切点解决规模问题。无论哪种方式，代理只拦截经过它的调用，内部直调仍会绕过。",
+    "followUps": [
+      {
+        "question": "静态代理的优点是什么？",
+        "answer": "编译期类型明确、调用链可见、调试简单，不依赖运行时生成机制。"
+      },
+      {
+        "question": "多个横切逻辑如何组合？",
+        "answer": "可层层包装代理，但顺序需显式；数量增多时更适合拦截器链或AOP框架。"
+      }
+    ],
+    "pitfalls": [
+      "声称只有动态代理才算AOP，混淆思想与实现手段。"
+    ],
+    "tags": [
+      "Spring",
+      "静态代理",
+      "AOP"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按AOP思想与代理实现关系回答。"
+  },
+  {
+    "sourceId": "src-1052",
+    "shortAnswer": "设计IoC容器要考虑Bean定义模型、注册与查找、实例化、依赖解析、作用域、生命周期、扩展点和并发安全。",
+    "fullAnswer": "先定义BeanDefinition描述类型、工厂方法、依赖、作用域与回调；注册表按名称和类型索引，创建器选择构造器并递归解析依赖，检测循环和歧义；单例缓存需保证并发下只创建一次，prototype每次新建。再提供BeanPostProcessor包装实例、配置转换、事件与资源加载。销毁按依赖逆序执行。安全上限制反射范围和表达式能力，错误信息要展示依赖路径。最小版本应先支持构造器注入，避免一开始复制Spring全部复杂度。",
+    "followUps": [
+      {
+        "question": "如何检测构造器循环依赖？",
+        "answer": "维护当前创建路径，解析时遇到已在路径中的Bean就报告完整环路；不要靠返回半成品对象掩盖。"
+      },
+      {
+        "question": "按类型注入遇到多个候选怎么办？",
+        "answer": "支持主候选、限定符或名称，仍歧义时启动失败并列出候选，不能随机选择。"
+      }
+    ],
+    "pitfalls": [
+      "先实现三级缓存，却没有清晰的对象生命周期和代理需求。"
+    ],
+    "tags": [
+      "Spring",
+      "IoC设计",
+      "容器"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按教学型最小IoC容器设计，不要求复刻Spring。"
+  },
+  {
+    "sourceId": "src-1053",
+    "shortAnswer": "反射允许运行时读取类、方法、字段、构造器和注解并动态调用，常用于IoC、序列化、ORM、测试与插件。",
+    "fullAnswer": "Java以Class对象表示类型元数据，可通过getDeclaredMethods等检查成员，Constructor创建实例，Method调用行为，Field访问状态。框架据此扫描注解、绑定配置或映射结果。反射把错误推迟到运行期，可能破坏封装，并受模块系统强封装限制；频繁查找应缓存元数据，热点路径可评估MethodHandle或代码生成。处理外部类名和方法名时必须白名单，避免任意实例化与调用。",
+    "followUps": [
+      {
+        "question": "getMethods和getDeclaredMethods区别是什么？",
+        "answer": "前者返回可见的public方法并包含继承成员；后者返回本类声明的方法，不限可见性但不自动包含父类。"
+      },
+      {
+        "question": "setAccessible总能成功吗？",
+        "answer": "不能，现代JDK模块边界可能拒绝深反射，需开放模块或改用公共API。"
+      }
+    ],
+    "pitfalls": [
+      "让用户输入直接决定反射类和方法，形成代码执行风险。"
+    ],
+    "tags": [
+      "Java",
+      "反射",
+      "Spring"
+    ],
+    "difficulty": "中等",
+    "contextNote": "模块访问行为随JDK版本和启动参数变化。"
+  },
+  {
+    "sourceId": "src-1054",
+    "shortAnswer": "Spring AOP用于以切面统一处理事务、日志、指标和鉴权，核心是切点匹配与代理拦截器链。",
+    "fullAnswer": "我会从概念、实现、边界和实践回答：Aspect封装关注点，Pointcut选择方法，Advice定义调用前后或环绕动作；容器通过BeanPostProcessor识别Advisor并创建JDK或类代理，调用时按顺序执行拦截器链。声明式事务是典型应用。代理只对经过容器代理的调用生效，自调用、private/final方法和手工new对象常失效。生产中应限制切点、规定顺序、保留Trace，并测试异常和异步边界。",
+    "followUps": [
+      {
+        "question": "AOP与拦截器有什么关系？",
+        "answer": "Spring AOP内部用方法拦截器表达通知链；Web拦截器则位于MVC处理器层，作用范围不同。"
+      },
+      {
+        "question": "异步方法中的ThreadLocal上下文会自动传播吗？",
+        "answer": "通常不会，需要显式包装任务或使用框架上下文传播能力，并防止线程池残留。"
+      }
+    ],
+    "pitfalls": [
+      "只讲注解用法，不说明代理生效条件。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP",
+      "面试"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring代理式AOP的掌握维度回答。"
+  },
+  {
+    "sourceId": "src-1055",
+    "shortAnswer": "依赖倒置是设计原则，IoC是控制权交给外部的思想，依赖注入是实现IoC的常见技术。",
+    "fullAnswer": "依赖倒置要求高层策略与低层细节都依赖抽象，而不是业务直接new具体基础设施。IoC把对象创建、装配和生命周期控制从对象内部交给容器或调用方；依赖注入通过构造器、方法或字段把协作者传入。三者相关但层级不同：只用了容器不代表架构自然满足依赖倒置，若业务接口仍由基础设施定义，方向依旧错误。构造器注入通常最能表达必需依赖和保持不可变。",
+    "followUps": [
+      {
+        "question": "服务定位器算依赖注入吗？",
+        "answer": "通常不是显式注入，对象主动从容器查找依赖，仍隐藏契约并耦合容器。"
+      },
+      {
+        "question": "接口应该放在哪一层？",
+        "answer": "按依赖倒置，核心业务需要的抽象通常由核心层拥有，基础设施实现它并向内依赖。"
+      }
+    ],
+    "pitfalls": [
+      "把“用了@Autowired”当成已经实现良好分层。"
+    ],
+    "tags": [
+      "Spring",
+      "依赖倒置",
+      "依赖注入"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按设计原则、思想和技术三个层次区分。"
+  },
+  {
+    "sourceId": "src-1056",
+    "shortAnswer": "依赖注入由外部在创建对象时提供其协作者，Spring通过BeanDefinition、依赖解析和反射或工厂方法完成装配。",
+    "fullAnswer": "对象只声明构造器或setter参数，不自行查找具体实现。Spring实例化Bean时解析参数类型、名称、Qualifier、Primary等元数据，从容器获取候选并注入；字段和方法注入多由AutowiredAnnotationBeanPostProcessor处理。构造器注入适合必需依赖，setter适合真正可选且可变的依赖，字段注入不利于测试和不变量。依赖解析失败应在启动时暴露候选列表，避免运行后才出现null。",
+    "followUps": [
+      {
+        "question": "@Primary和@Qualifier如何配合？",
+        "answer": "Qualifier明确选择候选，通常优先于仅凭Primary；多个限定条件的确切规则应按版本验证。"
+      },
+      {
+        "question": "配置值也是依赖吗？",
+        "answer": "是，可用类型安全配置对象注入；不要让业务类到处读取全局环境变量。"
+      }
+    ],
+    "pitfalls": [
+      "用optional或null隐藏必需依赖缺失，错误推迟到业务请求。"
+    ],
+    "tags": [
+      "Spring",
+      "依赖注入",
+      "Bean"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Spring容器常见注入机制回答。"
+  },
+  {
+    "sourceId": "src-1057",
+    "shortAnswer": "可用@PostConstruct和@PreDestroy、InitializingBean和DisposableBean，或Bean定义的initMethod与destroyMethod插入初始化和销毁逻辑。",
+    "fullAnswer": "初始化回调发生在依赖注入与部分Aware回调之后，@PostConstruct、自定义init等具体顺序随容器处理流程而定；销毁回调在容器关闭或作用域结束时触发。若需围绕所有Bean处理，可实现BeanPostProcessor；修改BeanDefinition则用BeanFactoryPostProcessor。资源获取应在初始化失败时清理，销毁要幂等并设置超时。prototype Bean通常不会由容器自动调用销毁回调，使用方需负责。",
+    "followUps": [
+      {
+        "question": "哪种回调侵入性最低？",
+        "answer": "自定义init/destroy方法或注解无需实现Spring接口；选择还要考虑标准注解依赖和可测试性。"
+      },
+      {
+        "question": "BeanPostProcessor适合单个Bean业务初始化吗？",
+        "answer": "通常不适合，它是容器级扩展，会影响大量Bean；单个Bean优先自身生命周期回调。"
+      }
+    ],
+    "pitfalls": [
+      "在销毁方法里无限等待，导致应用无法优雅下线。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean生命周期",
+      "扩展点"
+    ],
+    "difficulty": "中等",
+    "contextNote": "回调精确顺序以目标Spring版本测试确认。"
+  },
+  {
+    "sourceId": "src-1058",
+    "shortAnswer": "Spring IoC是容器根据元数据创建、装配并管理对象，让业务类依赖抽象且不掌控协作者生命周期。",
+    "fullAnswer": "配置类、组件扫描或XML先转为BeanDefinition；BeanFactory按需实例化，ApplicationContext再提供事件、资源、国际化等能力。依赖通过构造器或方法注入，作用域控制实例数量，BeanPostProcessor可在初始化前后增强对象并形成AOP代理。IoC降低创建耦合但不是消除依赖，依赖关系仍应清晰、避免全局取Bean。容器启动失败往往比运行期半初始化更安全。",
+    "followUps": [
+      {
+        "question": "IoC和DI是同义词吗？",
+        "answer": "DI是IoC最常见实现方式；IoC范围更广，核心是控制权从对象转移给外部框架或调用方。"
+      },
+      {
+        "question": "ApplicationContext和BeanFactory关系是什么？",
+        "answer": "前者建立在BeanFactory能力之上，增加事件、资源解析、自动注册处理器等应用级功能。"
+      }
+    ],
+    "pitfalls": [
+      "业务代码直接持有ApplicationContext到处getBean，退化为服务定位器。"
+    ],
+    "tags": [
+      "Spring",
+      "IoC",
+      "容器"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Spring核心容器语义回答。"
+  },
+  {
+    "sourceId": "src-1059",
+    "shortAnswer": "Spring AOP常用@Aspect、@Pointcut、@Before、@After、@AfterReturning、@AfterThrowing和@Around，并配合启用代理的配置。",
+    "fullAnswer": "@Aspect声明切面，@Pointcut复用切点表达式；五类通知分别处理调用前、最终、正常返回、异常和环绕。@Around能力最强，也最容易因漏调ProceedingJoinPoint.proceed、错误吞异常或改变返回值而破坏语义。@EnableAspectJAutoProxy可在非Boot配置中启用代理，Boot常通过自动配置完成。事务另有@Transactional。注解是否生效取决于切面和目标都在容器内、代理边界与版本配置。",
+    "followUps": [
+      {
+        "question": "@After和@AfterReturning区别是什么？",
+        "answer": "@After类似finally，无论成功或异常都执行；@AfterReturning仅正常返回执行并可访问结果。"
+      },
+      {
+        "question": "@Order数值如何理解？",
+        "answer": "通常较小值优先进入，退出顺序相反；多个切面应通过测试验证实际嵌套。"
+      }
+    ],
+    "pitfalls": [
+      "在@AfterThrowing中吞掉异常，却以为事务仍会自动回滚。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP注解",
+      "AspectJ"
+    ],
+    "difficulty": "基础",
+    "contextNote": "注解命名来自AspectJ风格，Spring以代理方式执行。"
+  },
+  {
+    "sourceId": "src-1060",
+    "shortAnswer": "Spring AOP常用于声明式事务、统一日志与指标、权限校验、重试、缓存和审计，但应限定在清晰方法边界。",
+    "fullAnswer": "事务拦截器在调用前获取或加入事务，按返回或异常提交回滚；日志和指标记录方法、耗时与结果；鉴权在服务入口验证身份与资源；重试和缓存也可由切面包装。横切逻辑必须明确顺序与异常语义，例如重试在事务内外会产生不同结果。异步调用、this自调用和非Bean对象可能绕过切面。敏感参数应脱敏，鉴权不能只依赖可被内部调用绕过的单一切点。",
+    "followUps": [
+      {
+        "question": "重试和事务切面谁在外层更合适？",
+        "answer": "通常希望每次重试拥有独立事务，则重试包在事务外层；具体要按幂等和传播需求测试。"
+      },
+      {
+        "question": "日志切面能记录所有参数吗？",
+        "answer": "不应无差别记录，口令、令牌和个人信息必须脱敏或排除，并限制正文大小。"
+      }
+    ],
+    "pitfalls": [
+      "把AOP用于核心分支决策，使业务行为难以发现。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP应用",
+      "事务"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按常见Spring切面实践回答。"
+  },
+  {
+    "sourceId": "src-1061",
+    "shortAnswer": "单例和prototype创建初始化流程相近，但实例数量、获取时机和销毁管理不同，不能说生命周期完全一样。",
+    "fullAnswer": "singleton通常每个容器一个实例，默认在上下文刷新时创建，容器缓存并在关闭时调用销毁回调；prototype每次getBean或解析依赖创建新实例，完成注入和初始化后交给调用方，容器一般不再管理销毁。request、session等作用域随Web上下文结束。将prototype注入singleton时只在单例创建时解析一次，若想每次新实例需ObjectProvider、作用域代理或工厂。",
+    "followUps": [
+      {
+        "question": "prototype注入singleton为何不会每次新建？",
+        "answer": "注入发生在singleton创建阶段，字段保存当时那个实例；后续调用不会自动重新向容器请求。"
+      },
+      {
+        "question": "单例Bean线程安全吗？",
+        "answer": "作用域只保证实例数量，不保证内部可变状态线程安全；应无状态或正确同步。"
+      }
+    ],
+    "pitfalls": [
+      "把单例范围等同于JVM全局唯一和天然线程安全。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean作用域",
+      "生命周期"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按单个ApplicationContext范围回答。"
+  },
+  {
+    "sourceId": "src-1062",
+    "shortAnswer": "Spring Bean经历定义注册、实例化、属性填充、Aware、前后处理器、初始化、使用与销毁。",
+    "fullAnswer": "配置先解析成BeanDefinition；创建时选择构造器实例化，解析并填充依赖；执行BeanNameAware等回调；BeanPostProcessor初始化前阶段处理@PostConstruct，随后执行InitializingBean和自定义初始化，再经初始化后处理，代理常在此返回。容器关闭时对受管理单例执行@PreDestroy、DisposableBean和自定义销毁。循环依赖、FactoryBean、延迟和作用域代理会改变观察到的细节，因此调试要看实际对象与代理。",
+    "followUps": [
+      {
+        "question": "FactoryBean的生命周期有何特殊？",
+        "answer": "容器管理FactoryBean本身，并通过getObject暴露产品；名称加&可取工厂，产品作用域与缓存由契约和实现决定。"
+      },
+      {
+        "question": "初始化方法能否使用AOP增强？",
+        "answer": "初始化发生在最终代理完全交付前，内部调用通常不应假设经过代理；需要增强的工作放到外部协作阶段。"
+      }
+    ],
+    "pitfalls": [
+      "在构造器里访问尚未注入的字段或启动线程。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean生命周期",
+      "BeanPostProcessor"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "精确回调顺序与特殊Bean以项目Spring版本为准。"
+  },
+  {
+    "sourceId": "src-1063",
+    "shortAnswer": "Spring Bean默认是singleton，即每个ApplicationContext按Bean定义缓存一个实例，但可配置其他作用域。",
+    "fullAnswer": "singleton不等于整个JVM唯一：不同上下文、不同Bean名称或同类的多个定义可产生多个实例。prototype每次请求创建，request、session、application和websocket等Web作用域依运行环境提供。作用域可用@Scope或BeanDefinition设置。单例适合无状态服务或线程安全组件；保存请求级可变状态会产生并发问题。把短作用域对象注入长作用域时，应使用代理或Provider解决生命周期错配。",
+    "followUps": [
+      {
+        "question": "如何验证一个Bean的作用域？",
+        "answer": "查看BeanDefinition或容器API，并比较同一上下文多次获取的实例；不要仅看类上是否有@Component。"
+      },
+      {
+        "question": "@Bean方法每次调用都返回新对象吗？",
+        "answer": "在完整@Configuration代理模式下，容器拦截调用并返回作用域对象；lite模式或直接普通调用行为可能不同。"
+      }
+    ],
+    "pitfalls": [
+      "误认为singleton让类自动线程安全。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean作用域",
+      "单例"
+    ],
+    "difficulty": "基础",
+    "contextNote": "默认作用域按Spring容器回答。"
+  },
+  {
+    "sourceId": "src-1064",
+    "shortAnswer": "IoC通过BeanDefinition、依赖解析和生命周期处理器实现；AOP通过BeanPostProcessor识别Advisor并生成代理执行拦截器链。",
+    "fullAnswer": "IoC先将配置解析为BeanDefinition注册到BeanFactory，创建Bean时选择构造器、解析候选、注入属性并经过生命周期回调。AOP基础设施以自动代理创建器这一类BeanPostProcessor检查每个Bean是否匹配切点，匹配则返回JDK或类代理；调用代理时按Advisor顺序执行MethodInterceptor链。循环依赖场景可能提前暴露引用以保持注入的代理一致性，但能力有限。两个机制都依赖容器扩展点，却分别解决对象管理和调用增强。",
+    "followUps": [
+      {
+        "question": "AOP为什么依赖IoC？",
+        "answer": "Spring需要在Bean创建流程中识别并替换为代理，脱离容器手工new的对象不会自动增强。"
+      },
+      {
+        "question": "BeanPostProcessor本身会被普通后处理器处理吗？",
+        "answer": "它们需提前创建以参与后续Bean生命周期，容器会有特殊注册流程，不能按普通Bean时机理解。"
+      }
+    ],
+    "pitfalls": [
+      "只回答反射和动态代理，遗漏BeanDefinition与后处理器。"
+    ],
+    "tags": [
+      "Spring",
+      "IoC原理",
+      "AOP原理"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "内部类与时序可能随Spring版本调整。"
+  },
+  {
+    "sourceId": "src-1065",
+    "shortAnswer": "常用Spring注解可按组件、注入、配置、Web、事务与AOP分类，而不是无序罗列。",
+    "fullAnswer": "组件有@Component、@Service、@Repository、@Controller；配置用@Configuration、@Bean、@Import、@Profile；注入用@Autowired、@Qualifier、@Primary、@Value；Web常用@RequestMapping及各HTTP映射、@RequestBody、@PathVariable；事务是@Transactional；AOP有@Aspect及通知注解。Spring Boot还常见@SpringBootApplication、@ConfigurationProperties和条件注解。使用时要说明元注解、扫描范围、代理边界和配置绑定校验，具体能力随版本变化。 注解只是元数据，真正行为由容器处理器、代理或MVC组件解释；同名概念在Spring与Jakarta包中也要核对导入来源。",
+    "followUps": [
+      {
+        "question": "@Repository有什么额外意义？",
+        "answer": "除语义标识外，可参与持久化异常转换，但需相关后处理器与技术栈支持。"
+      },
+      {
+        "question": "@Configuration和普通@Component配置类一样吗？",
+        "answer": "完整配置类可代理@Bean方法保证容器语义；lite模式不做相同拦截，版本配置也会影响。"
+      }
+    ],
+    "pitfalls": [
+      "只背注解名称，不知道由哪个处理器解释以及何时生效。"
+    ],
+    "tags": [
+      "Spring",
+      "注解",
+      "配置"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Spring Framework与Boot常用注解分类。"
+  },
+  {
+    "sourceId": "src-1066",
+    "shortAnswer": "Spring内置作用域有singleton、prototype，Web环境还有request、session、application和websocket，也支持自定义Scope。",
+    "fullAnswer": "singleton每个容器每个Bean定义一个实例；prototype每次获取创建；request和session分别绑定HTTP请求与会话；application绑定ServletContext；websocket绑定WebSocket会话。短作用域注入长作用域时，需要作用域代理或ObjectProvider在使用时解析。销毁回调对单例和Web作用域通常由容器管理，而prototype交付后一般不跟踪。作用域选择应跟状态生命周期一致，并考虑线程安全和资源释放。",
+    "followUps": [
+      {
+        "question": "作用域代理是什么？",
+        "answer": "注入一个稳定代理，每次方法调用根据当前上下文找到真实短作用域实例，解决生命周期错配。"
+      },
+      {
+        "question": "request作用域能在异步线程直接使用吗？",
+        "answer": "通常上下文不会自动传播，需显式传递所需数据或使用框架支持，避免依赖线程绑定对象。"
+      }
+    ],
+    "pitfalls": [
+      "把session Bean用于大量或不可序列化状态，导致集群复制和内存压力。"
+    ],
+    "tags": [
+      "Spring",
+      "Bean作用域",
+      "Web"
+    ],
+    "difficulty": "基础",
+    "contextNote": "Web作用域需相应Web ApplicationContext。"
+  },
+  {
+    "sourceId": "src-1067",
+    "shortAnswer": "Spring核心思想是IoC管理对象与依赖，AOP分离横切逻辑，并用一致抽象和扩展点整合各类基础设施。",
+    "fullAnswer": "IoC让Bean声明依赖、容器负责创建装配与生命周期，促进面向接口和可测试性；AOP通过代理把事务、日志、鉴权等放在调用边界；模板与统一异常体系封装JDBC、事务等重复资源管理；ApplicationContext事件、资源和后处理器提供扩展机制。Spring价值不只是少写new，而是建立可组合的对象模型。代价是运行时代理和自动配置可能隐藏调用链，所以需要理解容器时序、边界与诊断工具。",
+    "followUps": [
+      {
+        "question": "Spring是否强制所有对象都交给容器？",
+        "answer": "不必，领域值对象可普通创建；需要依赖管理、生命周期或增强的服务更适合成为Bean。"
+      },
+      {
+        "question": "核心思想如何改善测试？",
+        "answer": "构造器注入让依赖可替换，业务类不依赖全局容器；切面和基础设施也可分别测试。"
+      }
+    ],
+    "pitfalls": [
+      "把框架便利等同于架构质量，容器中堆满职责混乱的Bean。"
+    ],
+    "tags": [
+      "Spring",
+      "核心思想",
+      "IoC"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Spring Framework设计主线回答。"
+  },
+  {
+    "sourceId": "src-1068",
+    "shortAnswer": "同一Bean内用this调用@Transactional方法通常不生效，因为调用没有经过Spring事务代理。",
+    "fullAnswer": "声明式事务由代理拦截外部方法调用，读取事务属性、开启或加入事务，再提交或回滚。this调用直接执行目标对象方法，不会重新进入代理，因此新传播级别、隔离或回滚规则都不会应用。可把事务方法拆到另一个Bean由外部调用，或用TransactionTemplate显式划定事务。自注入代理和AopContext虽可绕过，但增加耦合且容易形成循环。AspectJ织入模式边界不同。",
+    "followUps": [
+      {
+        "question": "外部调用private事务方法会生效吗？",
+        "answer": "代理无法正常暴露或覆盖private方法，通常不会按预期生效；应使用可代理的公开边界。"
+      },
+      {
+        "question": "TransactionTemplate有什么优势？",
+        "answer": "事务边界在代码中显式，可控制返回与异常，适合内部流程，但会增加与Spring事务API耦合。"
+      }
+    ],
+    "pitfalls": [
+      "通过捕获异常后正常返回，使代理误判事务成功并提交。"
+    ],
+    "tags": [
+      "Spring",
+      "事务",
+      "自调用"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring默认代理式事务管理回答。"
+  },
+  {
+    "sourceId": "src-1069",
+    "shortAnswer": "事务常因自调用、非容器对象、不可代理方法、异常被吞或回滚规则不匹配、错误事务管理器和异步边界而失效。",
+    "fullAnswer": "@Transactional只有经过正确代理才生效，this内部调用、手工new、private/final方法或类未被扫描都可能绕过。默认回滚通常针对RuntimeException和Error，受检异常需配置rollbackFor；异常被catch不再抛出时代理会提交。多数据源若选错TransactionManager，操作不在同一事务。新线程不继承线程绑定事务，数据库引擎或表也必须支持事务。排查应开启事务日志并验证连接、代理类型和最终提交行为。",
+    "followUps": [
+      {
+        "question": "方法返回false能自动回滚吗？",
+        "answer": "不会，仅返回值通常不触发回滚；应抛出匹配异常或显式标记rollbackOnly。"
+      },
+      {
+        "question": "异步方法能加入调用方事务吗？",
+        "answer": "通常不能，事务上下文绑定当前线程；需重新划定事务或用消息实现最终一致。"
+      }
+    ],
+    "pitfalls": [
+      "只检查有没有注解，不检查调用路径和异常是否穿过代理。"
+    ],
+    "tags": [
+      "Spring",
+      "事务失效",
+      "Transactional"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "默认回滚规则与代理能力以目标Spring版本为准。"
+  },
+  {
+    "sourceId": "src-1070",
+    "shortAnswer": "Spring扩展点包括BeanFactoryPostProcessor、BeanPostProcessor、ImportSelector、FactoryBean、事件、Scope、条件与各类Customizer。",
+    "fullAnswer": "BeanFactoryPostProcessor修改定义元数据，BeanDefinitionRegistryPostProcessor还能新增定义；BeanPostProcessor围绕实例初始化并可创建代理；FactoryBean封装复杂对象创建；ImportSelector和Registrar参与配置导入；ApplicationListener处理事件；自定义Scope管理特殊生命周期。还可扩展属性转换、参数解析和MVC处理器。选扩展点应匹配时机，避免在定义阶段访问普通Bean，也要限制全局影响并写启动集成测试。",
+    "followUps": [
+      {
+        "question": "什么时候用FactoryBean而不是@Bean？",
+        "answer": "需封装可复用的复杂产品创建逻辑、让多个项目按统一契约使用时可考虑；单项目简单对象@Bean更直观。"
+      },
+      {
+        "question": "后处理器为什么常要static @Bean？",
+        "answer": "让它在配置类实例化前注册，减少过早创建配置类造成的生命周期问题；具体提示以版本为准。"
+      }
+    ],
+    "pitfalls": [
+      "用BeanPostProcessor修改所有Bean却没有类型和包范围保护。"
+    ],
+    "tags": [
+      "Spring",
+      "扩展点",
+      "容器"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "Spring扩展点很多，精确调用时序按版本源码与测试确认。"
+  },
+  {
+    "sourceId": "src-1071",
+    "shortAnswer": "Spring容器主要存BeanDefinition、单例实例及其创建状态、作用域与依赖关系，还注册后处理器、环境和事件等基础设施。",
+    "fullAnswer": "BeanDefinitionRegistry保存如何创建Bean的元数据；SingletonBeanRegistry缓存已完成单例，并可能维护创建中对象的辅助缓存；依赖映射用于销毁顺序和循环检测。ApplicationContext还持有Environment、资源加载器、消息源、事件广播器以及各种处理器。prototype实例不会长期统一缓存。说“容器就是一个Map”过于粗糙，因为名称别名、FactoryBean产品、父子容器和作用域代理都会改变查找语义。",
+    "followUps": [
+      {
+        "question": "Bean名称对应的一定是最终业务对象吗？",
+        "answer": "不一定，可能是代理；若定义为FactoryBean，普通名称取产品，加&才取工厂本身。"
+      },
+      {
+        "question": "类型查找为何可能触发Bean创建？",
+        "answer": "判断FactoryBean产品类型或处理某些动态定义时可能需要初始化，具体取决于元数据是否足够。"
+      }
+    ],
+    "pitfalls": [
+      "直接依赖三级缓存结构作为业务API。"
+    ],
+    "tags": [
+      "Spring",
+      "容器",
+      "BeanDefinition"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring ApplicationContext内部职责概括。"
+  },
+  {
+    "sourceId": "src-1072",
+    "shortAnswer": "Spring三级缓存通常是三个Map：完整单例、早期单例和单例工厂，用于创建期引用与代理一致性。",
+    "fullAnswer": "常见实现中singletonObjects保存完成初始化的单例；earlySingletonObjects保存已暴露的早期引用；singletonFactories保存能按需生成早期引用的ObjectFactory。A创建中依赖B，B再依赖A时，B可通过工厂获得A的早期引用；若A需要AOP，该工厂有机会返回早期代理，避免最终注入对象不一致。它只覆盖特定单例setter或字段循环，构造器循环和prototype循环不能一般解决。内部字段名与策略可能随版本改变。",
+    "followUps": [
+      {
+        "question": "为什么早期引用不直接放二级缓存？",
+        "answer": "工厂可延迟决定是否包装代理，只有真正发生循环时才生成，减少不必要的早期暴露。"
+      },
+      {
+        "question": "三级缓存是通用循环依赖方案吗？",
+        "answer": "不是，它是Spring特定单例创建策略，可能暴露未完整初始化对象，设计上仍应消除循环。"
+      }
+    ],
+    "pitfalls": [
+      "把三个缓存说成分别存Bean、属性和代理，语义错误。"
+    ],
+    "tags": [
+      "Spring",
+      "三级缓存",
+      "循环依赖"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按经典Spring单例缓存实现回答，内部结构非稳定API。"
+  },
+  {
+    "sourceId": "src-1073",
+    "shortAnswer": "Spring对部分单例setter或字段循环依赖，通过提前暴露对象工厂和早期引用打破创建等待。",
+    "fullAnswer": "A实例化后、属性填充前注册可产生早期引用的工厂；创建B时发现依赖A，从三级缓存取得A的早期引用并注入；B完成后回到A继续初始化。若A需代理，getEarlyBeanReference应尽量保证B拿到的与最终暴露对象一致。构造器循环因对象尚未实例化无法这样处理，prototype也不使用单例缓存。较新Boot版本默认可能禁止循环引用，实际行为依配置。解决业务循环更应重构职责或引入事件。",
+    "followUps": [
+      {
+        "question": "构造器循环为什么不能三级缓存解决？",
+        "answer": "注册早期引用前必须先得到对象实例，而构造器参数又要求对方先创建，形成无法跨越的起点。"
+      },
+      {
+        "question": "@Lazy能解决吗？",
+        "answer": "可注入延迟代理打断部分创建链，但只是推迟依赖解析，运行时语义和设计耦合仍需评估。"
+      }
+    ],
+    "pitfalls": [
+      "依赖框架循环引用能力掩盖模块边界错误。"
+    ],
+    "tags": [
+      "Spring",
+      "循环依赖",
+      "Bean"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "循环引用默认开关和代理兼容性随Spring Boot版本变化。"
+  },
+  {
+    "sourceId": "src-1074",
+    "shortAnswer": "第三级缓存的价值是保存对象工厂，按需生成可能经过早期代理处理的引用；只用两级在某些代理循环中难保证对象一致。",
+    "fullAnswer": "完整单例和早期单例两个Map能保存结果，却无法在对象刚实例化时延迟决定“暴露原对象还是代理”。singletonFactory把这一决定推迟到真的有人循环依赖A时，并调用SmartInstantiationAwareBeanPostProcessor获取早期引用。若事先就为所有Bean创建代理再放二级缓存，会改变正常生命周期并产生额外成本；若直接放原对象，依赖方可能持有与最终代理不同的实例。理论上可重新设计成两级，但不是经典Spring语义下简单删一个Map。",
+    "followUps": [
+      {
+        "question": "没有AOP时两级缓存是否够？",
+        "answer": "对最简单的setter单例循环，保存早期对象可能够；Spring需要统一支持潜在代理和按需暴露，因此保留工厂层。"
+      },
+      {
+        "question": "为什么不鼓励循环依赖？",
+        "answer": "早期对象可能尚未完成初始化，关系难测试，构造器注入也无法支持，通常说明职责应重构。"
+      }
+    ],
+    "pitfalls": [
+      "把“三级”当神秘固定算法，不解释延迟代理这一需求。"
+    ],
+    "tags": [
+      "Spring",
+      "三级缓存",
+      "AOP"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "这是对经典实现动机的解释，不把内部Map数量当公共契约。"
+  },
+  {
+    "sourceId": "src-1075",
+    "shortAnswer": "Spring AOP通过Advisor匹配Bean方法，并以JDK或类代理组织MethodInterceptor链，在目标调用前后执行增强。",
+    "fullAnswer": "启动时切面注解或配置被转换为Advisor，自动代理创建器作为BeanPostProcessor检查候选Bean；匹配后生成代理。运行时代理根据具体方法筛选拦截器，环绕式调用链逐层proceed，最终进入目标方法。事务、缓存等都建立在类似机制上。代理边界意味着this调用和非Bean对象不生效，final/private方法受限；AspectJ织入可覆盖更多连接点但部署复杂。排查应查看实际代理类、Advisor列表与调用入口。",
+    "followUps": [
+      {
+        "question": "代理链如何传播异常？",
+        "answer": "拦截器可观察或转换异常，但通常应保持原语义继续抛出，让外层事务或调用方处理。"
+      },
+      {
+        "question": "目标类实现接口时用哪种代理？",
+        "answer": "常见默认可用JDK代理，也可配置类代理；不同版本和配置需以运行时类型确认。"
+      }
+    ],
+    "pitfalls": [
+      "切面捕获异常后返回默认值，意外改变回滚与告警。"
+    ],
+    "tags": [
+      "Spring",
+      "AOP原理",
+      "Advisor"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按Spring代理式AOP解释。"
+  },
+  {
+    "sourceId": "src-1076",
+    "shortAnswer": "常见Starter有web、data-jpa、jdbc、validation、security、actuator、cache、test，以及对应消息和数据组件Starter。",
+    "fullAnswer": "Starter本质是依赖描述符，按场景聚合一组兼容依赖；例如spring-boot-starter-web带入MVC、Servlet容器与JSON支持，actuator提供健康与指标端点，test聚合测试框架。第三方也可提供自定义Starter并配套自动配置。具体名称、默认实现和依赖会随Spring Boot大版本变化，特别是WebFlux、消息中间件和观测体系。使用时应依赖BOM管理版本，避免手工覆盖造成不兼容，并检查传递依赖与安全公告。",
+    "followUps": [
+      {
+        "question": "Starter和自动配置是一回事吗？",
+        "answer": "不是。Starter主要聚合依赖；自动配置根据类路径和属性创建Bean，两者常配套发布。"
+      },
+      {
+        "question": "如何查看Starter带入了什么？",
+        "answer": "查看构建工具依赖树和对应POM，并结合条件评估报告确认哪些自动配置生效。"
+      }
+    ],
+    "pitfalls": [
+      "罗列不存在或已改名的Starter，不核对所用Boot版本。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "Starter",
+      "依赖管理"
+    ],
+    "difficulty": "基础",
+    "contextNote": "示例按常见Spring Boot生态，准确名称以当前版本为准。"
+  },
+  {
+    "sourceId": "src-1077",
+    "shortAnswer": "Spring Boot通过约定默认值、Starter依赖和条件自动配置，降低Spring项目启动与运维配置成本。",
+    "fullAnswer": "它提供统一依赖版本、嵌入式服务器、外部化配置、Actuator和可执行打包，让团队更快建立可运行服务。自动配置在类路径、Bean和属性条件满足时提供合理默认，同时允许用户Bean覆盖或排除。收益是减少样板并形成标准化交付，代价是行为可能隐式，升级时需看条件与迁移说明。大型项目仍应明确模块边界、配置来源和安全端点，不能把Boot等同于无需理解Spring。",
+    "followUps": [
+      {
+        "question": "什么时候不必使用Spring Boot？",
+        "answer": "极简库、受限容器或已有成熟平台且Boot依赖成本不合适时可不用；应基于交付约束决定。"
+      },
+      {
+        "question": "如何诊断自动配置没生效？",
+        "answer": "查看条件评估报告、启动日志、类路径和用户Bean，确认哪条条件不匹配或被排除。"
+      }
+    ],
+    "pitfalls": [
+      "接受所有默认配置直接上生产，未审查端点、连接池和线程容量。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "自动配置",
+      "工程化"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按Spring Boot通用价值回答。"
+  },
+  {
+    "sourceId": "src-1078",
+    "shortAnswer": "自定义Starter通常包含自动配置模块与依赖聚合模块，按条件创建Bean，并提供类型安全配置和元数据。",
+    "fullAnswer": "先定义@ConfigurationProperties配置类并校验关键字段，再编写AutoConfiguration，用ConditionalOnClass、ConditionalOnMissingBean、ConditionalOnProperty等限制生效条件，允许用户覆盖默认Bean。按目标Boot版本通过约定的imports文件或旧版spring.factories注册自动配置，另建starter模块只聚合依赖。还应提供配置元数据、失败分析、测试切片和示例，避免扫描用户包。日志不得输出密钥，外部连接需有超时与关闭回调。",
+    "followUps": [
+      {
+        "question": "为什么常用ConditionalOnMissingBean？",
+        "answer": "让自动配置提供默认实现，同时尊重业务显式定义，避免重复Bean和难以覆盖。"
+      },
+      {
+        "question": "如何测试Starter？",
+        "answer": "用ApplicationContextRunner组合不同类路径、属性和用户Bean，断言条件、生效Bean与失败信息。"
+      }
+    ],
+    "pitfalls": [
+      "无条件创建外部客户端，导致缺少配置时启动慢或连接泄漏。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "自定义Starter",
+      "自动配置"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "自动配置注册文件在Boot 2与3等版本间有变化。"
+  },
+  {
+    "sourceId": "src-1079",
+    "shortAnswer": "约定大于配置是框架先给常见场景合理默认，用户只声明差异，从而减少重复配置但仍可显式覆盖。",
+    "fullAnswer": "Spring Boot根据类路径、环境和已有Bean推断服务器、JSON、数据源等默认组合，Starter和配置属性形成一致约定。这样新服务结构统一、启动快，团队不必复制大量XML。约定不是隐藏不可改：应能通过属性、用户Bean、排除自动配置或自定义器调整。风险是开发者不知道默认值来源，升级后行为变化，因此要保留条件报告、锁定版本并对关键配置写集成测试。",
+    "followUps": [
+      {
+        "question": "约定与魔法的边界是什么？",
+        "answer": "约定应可解释、可观测、可覆盖；若无法追踪条件和默认值，就会变成难维护的魔法。"
+      },
+      {
+        "question": "为什么生产仍需显式配置？",
+        "answer": "线程、连接、超时和安全端点与容量和风险相关，不能依赖面向通用开发环境的默认值。"
+      }
+    ],
+    "pitfalls": [
+      "把“少配置”理解为“不需要配置管理和审查”。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "约定优于配置",
+      "自动配置"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按框架设计原则回答。"
+  },
+  {
+    "sourceId": "src-1080",
+    "shortAnswer": "Filter属于Servlet容器链，围绕整个请求；Interceptor属于Spring MVC处理器链，能访问Handler并有前后与完成回调。",
+    "fullAnswer": "Filter可处理编码、CORS、包装请求响应和通用安全头，发生在DispatcherServlet之前和之后，也能覆盖非MVC资源。HandlerInterceptor的preHandle、postHandle、afterCompletion位于映射到Controller之后，适合基于处理器元数据做鉴权、日志和模型处理。异常与异步请求会改变回调时机，需要实现相应异步钩子。二者都不应读取大请求体后不回放，也要注意顺序和敏感日志。",
+    "followUps": [
+      {
+        "question": "鉴权应该放哪一层？",
+        "answer": "通用认证可在安全过滤器链，依赖Controller注解的授权可在拦截器或方法安全；关键资源仍需服务层校验。"
+      },
+      {
+        "question": "Filter如何注册顺序？",
+        "answer": "可用FilterRegistrationBean、Order或安全框架链配置，必须用集成测试验证实际顺序。"
+      }
+    ],
+    "pitfalls": [
+      "同时在Filter和Interceptor重复读写响应，导致提交后异常。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "Filter",
+      "Interceptor"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Servlet型Spring MVC应用回答，WebFlux机制不同。"
+  },
+  {
+    "sourceId": "src-1081",
+    "shortAnswer": "典型Boot项目按业务或领域分包，入口类置于上层包，配置、接口、应用、领域和基础设施边界清晰。",
+    "fullAnswer": "最小结构包含@SpringBootApplication入口、src/main/resources配置和测试目录。中大型项目比controller/service/repository全局分层更适合按业务模块组织，每个模块内部再划分API、application、domain、infrastructure，减少跨域耦合。启动类的包位置影响默认组件扫描，实体与Mapper扫描可显式配置。环境差异放外部配置，密钥不入库；数据库迁移脚本版本化。结构目标是依赖方向可检查，而不是套固定文件夹模板。",
+    "followUps": [
+      {
+        "question": "启动类为什么常放根包？",
+        "answer": "@SpringBootApplication包含组件扫描，默认从其所在包向下查找，根包可覆盖业务组件。"
+      },
+      {
+        "question": "配置类应该集中一个包吗？",
+        "answer": "通用基础设施可集中，领域专属配置宜靠近模块；关键是所有权和依赖方向清晰。"
+      }
+    ],
+    "pitfalls": [
+      "按技术层横切整个仓库，任何功能改动都跨多个巨大目录。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "项目结构",
+      "模块化"
+    ],
+    "difficulty": "基础",
+    "contextNote": "给出推荐结构而非框架强制目录。"
+  },
+  {
+    "sourceId": "src-1082",
+    "shortAnswer": "Boot核心注解是@SpringBootApplication，它组合配置、自动配置和组件扫描；配置绑定常用@ConfigurationProperties。",
+    "fullAnswer": "@SpringBootApplication组合@SpringBootConfiguration、@EnableAutoConfiguration和@ComponentScan。@Configuration/@Bean声明配置，@ConfigurationProperties把前缀属性绑定为类型安全对象并可配合@Validated；@Value适合少量值。自动配置常用ConditionalOnClass、ConditionalOnMissingBean和ConditionalOnProperty。Web、事务与数据注解来自Spring各模块。Boot 3迁移到Jakarta命名空间等变化会影响注解导包，回答应注明版本。 配置对象还应开启未知字段策略与启动期校验，避免拼写错误静默采用默认值；敏感值从安全配置源注入。",
+    "followUps": [
+      {
+        "question": "@ConfigurationProperties比@Value好在哪？",
+        "answer": "支持分组、类型转换、校验和元数据，适合可维护的成组配置，也更容易测试。"
+      },
+      {
+        "question": "@EnableAutoConfiguration如何选择配置？",
+        "answer": "加载候选自动配置类，再按类路径、Bean和属性等条件筛选，用户可排除特定项。"
+      }
+    ],
+    "pitfalls": [
+      "把@ConfigurationProperties类注册遗漏，导致绑定对象不是Bean。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "注解",
+      "配置绑定"
+    ],
+    "difficulty": "基础",
+    "contextNote": "配置注册方式和包扫描能力随Boot版本变化。"
+  },
+  {
+    "sourceId": "src-1083",
+    "shortAnswer": "Spring Boot体现工厂、建造者、策略、模板、观察者、代理、条件装配与外观等模式，但应结合具体机制说明。",
+    "fullAnswer": "SpringApplication通过构建与运行流程组织启动；ApplicationContext和BeanFactory体现工厂；各类Customizer与策略接口替换行为；JdbcTemplate等封装固定资源流程；ApplicationEvent发布订阅体现观察者；AOP和事务使用代理；自动配置用条件组合决定装配，Starter提供场景外观。设计模式不是目的，价值在可替换与扩展。内部类名和实现会随版本变动，面试应给出参与者、调用时机和解决的问题。",
+    "followUps": [
+      {
+        "question": "自动配置算哪种模式？",
+        "answer": "更像条件化装配与约定机制，可包含工厂和策略，不必强行归为单一经典GoF模式。"
+      },
+      {
+        "question": "模板方法和策略如何区分？",
+        "answer": "模板固定流程并开放步骤，策略把可替换算法作为协作者；Spring常把两者组合。"
+      }
+    ],
+    "pitfalls": [
+      "为了凑数量给每个类随意贴设计模式标签。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "设计模式",
+      "架构"
+    ],
+    "difficulty": "中等",
+    "contextNote": "模式归类存在解释空间，以机制说明为主。"
+  },
+  {
+    "sourceId": "src-1084",
+    "shortAnswer": "在Boot中先配置DataSource和事务管理器，再在配置类启用事务能力，并在可代理方法上使用@Transactional。",
+    "fullAnswer": "单数据源Boot通常自动创建PlatformTransactionManager并启用相关基础设施，业务在public服务方法标注@Transactional即可；纯Spring配置可显式@EnableTransactionManagement。要确认数据库引擎支持事务、方法经过容器代理、异常规则匹配，并为多数据源指定正确管理器。事务不跨线程自动传播，远程调用也不属于本地事务。测试不能只看异常，应验证数据库最终状态。",
+    "followUps": [
+      {
+        "question": "Boot项目必须手写@EnableTransactionManagement吗？",
+        "answer": "很多自动配置场景不需要显式写，但添加可表达意图；是否自动启用应以版本和上下文为准。"
+      },
+      {
+        "question": "事务注解放Controller合适吗？",
+        "answer": "通常服务层更能表达业务边界，避免把HTTP处理和长事务耦合。"
+      }
+    ],
+    "pitfalls": [
+      "事务中执行慢远程调用，长期占用连接和锁。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "事务",
+      "Transactional"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按常见单数据源Boot应用回答。"
+  },
+  {
+    "sourceId": "src-1085",
+    "shortAnswer": "“导入即用”由Starter聚合依赖、自动配置注册和条件注解共同实现，类路径满足时容器自动创建默认Bean。",
+    "fullAnswer": "引入Starter后依赖进入类路径，Boot从自动配置候选清单加载配置类；ConditionalOnClass检测库是否存在，ConditionalOnMissingBean允许用户覆盖，ConditionalOnProperty读取开关，配置属性绑定参数。配置类再创建客户端、模板或端点，并注册生命周期管理。要做到真正可用，还需提供合理默认、清晰失败信息和配置元数据。外部服务未配置时不应悄悄连接错误地址。",
+    "followUps": [
+      {
+        "question": "为什么只加依赖有时仍不生效？",
+        "answer": "可能缺少必要类、属性条件不满足、用户已有Bean、自动配置被排除或注册文件与Boot版本不匹配。"
+      },
+      {
+        "question": "如何避免Starter污染应用？",
+        "answer": "不做宽泛组件扫描，Bean名称和条件明确，依赖最小化，并允许关闭和覆盖。"
+      }
+    ],
+    "pitfalls": [
+      "自动配置条件过宽，在任何项目中都创建线程或连接。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "Starter",
+      "自动装配"
+    ],
+    "difficulty": "中等",
+    "contextNote": "自动配置发现机制在Boot大版本间有差异。"
+  },
+  {
+    "sourceId": "src-1086",
+    "shortAnswer": "Boot自动装配会加载候选AutoConfiguration，按类路径、属性、Bean和应用类型条件筛选，再注册默认Bean。",
+    "fullAnswer": "@SpringBootApplication启用自动配置。Boot 2常从spring.factories加载候选，Boot 3主流使用AutoConfiguration.imports；候选类包含@Bean及Conditional系列条件。用户显式Bean通常通过ConditionalOnMissingBean覆盖默认。ImportSelector、BeanDefinition注册和后处理器把定义加入容器，实例仍遵循普通Bean生命周期。诊断可查看条件评估报告。自动装配减少样板但不保证配置最优，升级需看迁移说明。",
+    "followUps": [
+      {
+        "question": "自动配置的执行顺序如何控制？",
+        "answer": "可用AutoConfigureBefore、After或排序元数据表达，但业务不应依赖未声明顺序，并需做上下文测试。"
+      },
+      {
+        "question": "条件判断什么时候发生？",
+        "answer": "主要在配置解析和Bean定义注册阶段，不同条件阶段略有差异，不能假设都是Bean创建后。"
+      }
+    ],
+    "pitfalls": [
+      "只说SPI加载spring.factories，忽略Boot 3注册机制变化。"
+    ],
+    "tags": [
+      "Spring Boot",
+      "自动装配",
+      "源码"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "明确Boot 2与3候选清单机制差异。"
+  },
+  {
+    "sourceId": "src-1087",
+    "shortAnswer": "常见负载均衡算法有轮询、加权轮询、随机、最少连接、最短响应、哈希和一致性哈希。",
+    "fullAnswer": "轮询适合节点能力接近；加权算法反映容量差异；最少连接或响应时间适合请求耗时差异大，但需准确状态；源地址或业务键哈希提供粘性，一致性哈希减少扩缩容迁移。实际还需排除不健康实例，结合慢启动、区域优先、重试和熔断。重试若换节点可能放大流量，非幂等请求不能盲重试。算法效果应以分布均衡、P99、错误率和扩缩容扰动评估。",
+    "followUps": [
+      {
+        "question": "轮询为什么仍可能不均衡？",
+        "answer": "请求成本、长连接、实例规格和缓存命中不同，即使数量均匀，实际负载也可能差异很大。"
+      },
+      {
+        "question": "一致性哈希有什么代价？",
+        "answer": "热点键仍会形成热点，虚拟节点和权重需调参，实例变更也不是零迁移。"
+      }
+    ],
+    "pitfalls": [
+      "只看请求数均匀，不看节点CPU、在途请求和尾延迟。"
+    ],
+    "tags": [
+      "Spring Cloud",
+      "负载均衡",
+      "微服务"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按客户端或网关负载均衡通用算法回答。"
+  },
+  {
+    "sourceId": "src-1088",
+    "shortAnswer": "服务降级是在资源不足或依赖异常时主动关闭非核心能力、返回兜底或延迟处理，以保护核心链路。",
+    "fullAnswer": "先按业务价值分级，明确哪些请求可返回缓存、默认值、排队或提示稍后再试，哪些必须失败关闭。降级可由熔断、限流、配置开关或容量事件触发，并设置恢复条件和最大持续时间。兜底不能伪造成功，支付、权限等高风险操作要明确失败。需要监控降级率、核心SLO和数据补偿，定期演练依赖超时与恢复，避免降级逻辑长期无人维护。",
+    "followUps": [
+      {
+        "question": "降级和熔断是什么关系？",
+        "answer": "熔断是依据失败状态阻止调用的机制，降级是触发后采用的业务处置，两者常配合但不是同义词。"
+      },
+      {
+        "question": "默认值为什么可能危险？",
+        "answer": "调用方可能把默认值当真实结果继续产生副作用，应标识数据新鲜度或明确返回不可用。"
+      }
+    ],
+    "pitfalls": [
+      "降级接口返回200和伪造业务成功，造成数据错乱。"
+    ],
+    "tags": [
+      "Spring Cloud",
+      "服务降级",
+      "韧性"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按微服务业务降级回答，不绑定特定组件。"
+  },
+  {
+    "sourceId": "src-1089",
+    "shortAnswer": "服务熔断器根据一段时间内失败率、慢调用或异常数量打开，暂时快速失败，探测恢复后再关闭。",
+    "fullAnswer": "关闭状态正常放行并统计；达到阈值转打开，避免继续占用线程和连接；等待窗口后进入半开，只允许少量探测，请求成功到标准后恢复，失败则再次打开。配置要考虑最小样本、滑动窗口、慢调用阈值和例外分类。熔断不能替代超时，且兜底必须符合业务语义。需监控状态变化并避免所有实例同步半开造成惊群。",
+    "followUps": [
+      {
+        "question": "熔断与限流有什么区别？",
+        "answer": "限流保护自身容量，熔断依据依赖健康阻止调用；两者触发信号和保护对象不同。"
+      },
+      {
+        "question": "哪些异常不应计入失败率？",
+        "answer": "业务校验失败等预期客户端错误通常不代表依赖故障，应按异常类型与状态码分类。"
+      }
+    ],
+    "pitfalls": [
+      "没有超时先配置熔断，慢请求仍长期占满资源。"
+    ],
+    "tags": [
+      "Spring Cloud",
+      "熔断",
+      "Resilience"
+    ],
+    "difficulty": "中等",
+    "contextNote": "Hystrix、Resilience4j等API不同，回答聚焦状态机。"
+  },
+  {
+    "sourceId": "src-1090",
+    "shortAnswer": "Spring Boot解决单个应用的快速配置和交付，Spring Cloud提供服务发现、配置、网关、负载均衡与韧性等分布式能力。",
+    "fullAnswer": "Boot是构建Spring应用的基础，提供Starter、自动配置、嵌入式服务器和Actuator；Cloud建立在Boot之上，组合一组微服务抽象及具体实现。使用Cloud仍需Boot应用，且不能因为引入组件就自动获得高可用，服务边界、数据一致性和运维仍要设计。Spring Cloud版本线与Boot版本有严格兼容矩阵，Netflix旧组件、LoadBalancer等能力会随版本演进，升级前必须核对官方组合。",
+    "followUps": [
+      {
+        "question": "单体应用需要Spring Cloud吗？",
+        "answer": "通常不需要，Boot已足够；只有确实存在分布式配置、网关或服务协作需求时再引入对应能力。"
+      },
+      {
+        "question": "Cloud是不是一个具体注册中心？",
+        "answer": "不是，它提供抽象和集成，可连接不同实现；具体可用组件依版本线和生态。"
+      }
+    ],
+    "pitfalls": [
+      "任意混合Boot与Cloud版本，导致依赖和自动配置冲突。"
+    ],
+    "tags": [
+      "Spring Cloud",
+      "Spring Boot",
+      "微服务"
+    ],
+    "difficulty": "基础",
+    "contextNote": "组件可用性和兼容性强依赖版本线。"
+  },
+  {
+    "sourceId": "src-1091",
+    "shortAnswer": "让同一用户稳定落到同一实例可用业务键一致性哈希或粘性会话，但要处理扩缩容、故障和状态外置。",
+    "fullAnswer": "负载均衡器从用户ID、会话ID等稳定键计算路由，一致性哈希可在节点变化时减少迁移；Cookie粘性也能维持会话。它只能尽量稳定，节点宕机、扩容和权重调整仍会改路由，因此关键会话与业务状态应放共享存储，实例保持无状态。哈希键需防伪造与热点，不能直接信任可控Header。评估看命中稳定率、负载偏斜和故障切换，而非追求绝对不变。",
+    "followUps": [
+      {
+        "question": "为什么不直接按IP哈希？",
+        "answer": "NAT会让大量用户共享IP，移动网络IP也会变化，易倾斜且稳定性差；登录用户ID通常更合适。"
+      },
+      {
+        "question": "粘性会话的主要缺点是什么？",
+        "answer": "实例故障会丢本地状态，负载可能不均，并增加扩缩容复杂度，因此不应替代状态外置。"
+      }
+    ],
+    "pitfalls": [
+      "把同一用户强绑单机，故障时完全无法接管。"
+    ],
+    "tags": [
+      "Spring Cloud",
+      "负载均衡",
+      "会话粘性"
+    ],
+    "difficulty": "中等",
+    "contextNote": "“一直均衡给一个用户”按会话粘性需求理解。"
+  },
+  {
+    "sourceId": "src-1092",
+    "shortAnswer": "常用微服务组件包括注册发现、配置中心、网关、负载均衡、熔断限流、消息、链路追踪、指标日志和任务调度。",
+    "fullAnswer": "可按职责说明实际经验：注册发现管理实例与健康；配置中心动态分发并审计；网关做路由、认证和限流；客户端负载均衡选择实例；Resilience4j类组件处理超时、重试和熔断；Kafka或RocketMQ解耦异步流程；OpenTelemetry采集Trace、Metric和Log；容器平台负责部署与伸缩。列举时应说明用过的版本、故障案例和替代方案，不能把所有品牌都说成精通。",
+    "followUps": [
+      {
+        "question": "微服务最先需要哪类能力？",
+        "answer": "通常先有可靠部署、发现、配置和可观测性，再按实际故障引入熔断、消息等，避免过度平台化。"
+      },
+      {
+        "question": "组件越多系统越可靠吗？",
+        "answer": "不一定，每个组件增加依赖和运维面，只有明确解决问题且能监控演练才有价值。"
+      }
+    ],
+    "pitfalls": [
+      "只报产品名称，无法解释数据流和故障边界。"
+    ],
+    "tags": [
+      "Spring Cloud",
+      "微服务组件",
+      "可观测性"
+    ],
+    "difficulty": "基础",
+    "contextNote": "按能力分类，具体产品随组织技术栈不同。"
+  },
+  {
+    "sourceId": "src-1093",
+    "shortAnswer": "Spring MVC从DispatcherServlet开始，经HandlerMapping定位处理器、HandlerAdapter调用，随后转换返回值或渲染视图。",
+    "fullAnswer": "Servlet过滤器先处理请求，DispatcherServlet查找HandlerExecutionChain并执行拦截器preHandle；HandlerAdapter完成参数解析、数据绑定、校验和Controller调用。返回对象可由HttpMessageConverter序列化，ModelAndView则经ViewResolver解析并渲染。异常交给HandlerExceptionResolver，最终执行afterCompletion。异步请求会退出容器线程后再次分派，流程与同步略有差异。排查404要区分映射未找到、静态资源和内容协商。",
+    "followUps": [
+      {
+        "question": "@ResponseBody在哪一步生效？",
+        "answer": "返回值处理器识别注解或@RestController，再选择合适HttpMessageConverter写入响应。"
+      },
+      {
+        "question": "参数校验失败如何处理？",
+        "answer": "参数解析绑定阶段抛出相应异常，通常由异常解析器或@ControllerAdvice统一转换响应。"
+      }
+    ],
+    "pitfalls": [
+      "认为DispatcherServlet自己完成所有参数解析和序列化。"
+    ],
+    "tags": [
+      "Spring MVC",
+      "处理流程",
+      "DispatcherServlet"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按注解式Spring MVC同步主流程回答。"
+  },
+  {
+    "sourceId": "src-1094",
+    "shortAnswer": "HandlerMapping负责“找到谁处理”，HandlerAdapter负责“怎样调用它”，二者分离让DispatcherServlet支持多种处理器模型。",
+    "fullAnswer": "HandlerMapping根据URL、HTTP方法、Header等返回HandlerExecutionChain，其中含处理器和拦截器；RequestMappingHandlerMapping是注解控制器的典型实现。HandlerAdapter判断是否支持该处理器，并封装参数解析、方法调用和返回值处理；RequestMappingHandlerAdapter负责@RequestMapping方法。DispatcherServlet只依赖统一接口，不需了解处理器具体形态。一个映射找到Handler后还需匹配Adapter，否则无法执行。",
+    "followUps": [
+      {
+        "question": "为什么Controller不能直接实现统一接口？",
+        "answer": "Spring要兼容注解方法、传统Controller等多种模型，Adapter让旧模型和新扩展共存。"
+      },
+      {
+        "question": "HandlerInterceptor由谁带入流程？",
+        "answer": "HandlerMapping构造HandlerExecutionChain时加入匹配拦截器，DispatcherServlet在调用前后协调它们。"
+      }
+    ],
+    "pitfalls": [
+      "把HandlerMapping和HandlerAdapter都说成URL路由器。"
+    ],
+    "tags": [
+      "Spring MVC",
+      "HandlerMapping",
+      "HandlerAdapter"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按Spring MVC核心扩展接口回答。"
+  },
+  {
+    "sourceId": "src-1175",
+    "shortAnswer": "知识冲突时不应让模型凭语气选择，而要按来源权威、时效、适用范围和版本建立可解释的裁决策略。",
+    "fullAnswer": "先为文档记录发布者、时间、版本、地域、权限和生效区间，检索后把冲突片段聚类。政策类优先官方且当前生效版本，用户私有事实优先授权的业务真值源；无法确定时同时展示差异、引用证据并请求澄清，禁止模型擅自合并。失败处理包括隔离低可信源、回滚错误索引和人工复核。评测要构造同主题多版本冲突集，统计正确裁决率、弃答率、引用准确率和过期答案率。",
+    "followUps": [
+      {
+        "question": "权威来源也可能过期怎么办？",
+        "answer": "权威只是一个维度，还要比较生效时间和适用范围；元数据缺失时应降低置信或拒答。"
+      },
+      {
+        "question": "冲突规则应放提示词里吗？",
+        "answer": "提示词可表达原则，但关键优先级应在检索和策略层结构化执行、记录决策日志，避免模型漂移。"
+      }
+    ],
+    "pitfalls": [
+      "让LLM根据措辞自信程度判断真假，既不可解释也易被提示注入。"
+    ],
+    "tags": [
+      "RAG",
+      "知识冲突",
+      "可信来源"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按企业知识库存在版本与权限元数据的生产场景回答。"
+  },
+  {
+    "sourceId": "src-1176",
+    "shortAnswer": "RAG通过检索外部知识提高时效、可引用和可更新性；微调主要改变模型行为与领域表达，不能可靠充当频繁变化的事实库。",
+    "fullAnswer": "RAG无需重训即可增删文档，能返回证据并实施文档级权限，但受切分、召回、上下文长度和检索注入影响；检索失败时应降级搜索、澄清或带依据拒答。微调适合固定输出格式、风格和任务策略，推理时无需额外检索，但训练与回滚成本高，知识难精确更新且可能遗忘。二者可组合：微调行为，RAG提供事实。评测分别看任务成功率、召回与引用忠实度、时效性、成本和安全越权率。",
+    "followUps": [
+      {
+        "question": "什么时候直接微调更合适？",
+        "answer": "目标是稳定改变输出结构、术语风格或分类行为，且训练样本足够、事实不频繁变化时。"
+      },
+      {
+        "question": "RAG是否能消除幻觉？",
+        "answer": "不能，召回可能缺失或冲突，模型也可能脱离证据；需引用约束、弃答策略与端到端评测。"
+      }
+    ],
+    "pitfalls": [
+      "把公司机密直接放进训练或索引，却没有权限隔离和删除机制。"
+    ],
+    "tags": [
+      "RAG",
+      "微调",
+      "技术选型"
+    ],
+    "difficulty": "中等",
+    "contextNote": "微调能力、上下文长度和价格随模型版本变化，应以当前平台验证。"
+  },
+  {
+    "sourceId": "src-1177",
+    "shortAnswer": "RAG通常保存原文、Chunk、元数据和向量；切分粒度应由文档结构、问题范围、模型窗口和召回成本共同决定。",
+    "fullAnswer": "原文件存对象存储，解析后的段落和元数据进入文档库，Embedding进入向量索引，关键词进入倒排索引。Chunk可按标题、段落、句子或代码结构递归切分，并保留文档ID、层级、页码、权限与版本；常见做法有适度重叠和父子块检索。块太小语义不足，太大噪声和Token成本高。解析失败要隔离并告警。评测用真实问题比较Recall@k、上下文命中率、答案忠实度、延迟和索引体积。",
+    "followUps": [
+      {
+        "question": "Chunk大小能直接用固定Token数吗？",
+        "answer": "可作上限，但应优先尊重语义边界；表格、代码和合同条款需要专门解析策略。"
+      },
+      {
+        "question": "文档更新如何处理？",
+        "answer": "按内容哈希与版本增量重建相关Chunk，原子切换索引，并清理旧向量和权限缓存。"
+      }
+    ],
+    "pitfalls": [
+      "只存向量不保留原文定位与版本，无法引用、审计和删除。"
+    ],
+    "tags": [
+      "RAG",
+      "Chunking",
+      "向量索引"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体Chunk尺寸必须由数据与模型实测，不给通用魔法数。"
+  },
+  {
+    "sourceId": "src-1178",
+    "shortAnswer": "避免语义被切断可采用结构感知切分、句段边界、重叠窗口、父子块和查询时邻块扩展。",
+    "fullAnswer": "先解析标题层级、列表、表格、代码与引用关系，在自然边界切分；超过长度时递归到句子或Token，并保留前后少量重叠。检索可先命中小块，再取父段或相邻块，或用语义分段识别主题转折。表格应保留表头与行关联，代码保留符号范围。重叠过大会造成索引膨胀和重复上下文，因此评测要同时观察跨边界问题召回率、重复率、Token成本和答案忠实度。",
+    "followUps": [
+      {
+        "question": "如何发现切分确实破坏了语义？",
+        "answer": "构造答案横跨段落、标题与表格的测试集，查看命中块是否包含完整证据，并分析失败查询的邻块。"
+      },
+      {
+        "question": "语义切分一定优于规则切分吗？",
+        "answer": "不一定，模型成本和不稳定性更高；结构良好的文档往往规则切分更可控，应AB测试。"
+      }
+    ],
+    "pitfalls": [
+      "用大重叠掩盖解析问题，导致多个近重复块挤占Top-k。"
+    ],
+    "tags": [
+      "RAG",
+      "Chunking",
+      "语义完整性"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按混合文档生产索引回答。"
+  },
+  {
+    "sourceId": "src-1179",
+    "shortAnswer": "Embedding把文本映射到向量空间，使语义相近内容距离更近；选型要匹配语言、领域、维度、上下文和部署约束。",
+    "fullAnswer": "评估不能只看公开榜单。先建立来自真实查询的相关性标注，比较Recall@k、MRR、nDCG及跨语言、短查询、术语和否定样本；再测维度造成的存储、索引延迟和吞吐。查询与文档是否需不同前缀、向量归一化及距离度量必须按模型说明执行。模型升级会改变向量空间，不能新旧混用，应版本化并支持重建回滚。安全上避免把无权限文本送外部服务，并测试敏感相似搜索的越权率。",
+    "followUps": [
+      {
+        "question": "维度越大效果一定越好吗？",
+        "answer": "不一定，可能增加成本而收益有限；部分模型支持截断维度，应在自身数据上画效果成本曲线。"
+      },
+      {
+        "question": "更换Embedding模型为何要重建索引？",
+        "answer": "不同模型的坐标空间不可直接比较，查询向量与旧文档向量距离没有可靠语义。"
+      }
+    ],
+    "pitfalls": [
+      "只测随机负例，结果看似很高却无法区分同领域近似文档。"
+    ],
+    "tags": [
+      "RAG",
+      "Embedding",
+      "评测"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "模型接口、最大长度和推荐前缀随版本变化。"
+  },
+  {
+    "sourceId": "src-1180",
+    "shortAnswer": "Embedding算法可分为稀疏词项表示、静态词向量、上下文编码器、双塔检索模型和多模态向量等路线。",
+    "fullAnswer": "TF-IDF、BM25产生稀疏词项表示，精确术语匹配强；Word2Vec、GloVe给词固定向量，难处理上下文歧义；Transformer编码器可输出句段上下文向量，双塔通过对比学习让查询与文档可独立编码并高效ANN检索；Cross-Encoder交互更精确但通常用于重排而非预计算Embedding。还可有图、图像文本多模态嵌入。生产常做稀疏与稠密混合。评测需包含困难负例、领域漂移和成本；模型服务失败时应回退稀疏检索或缓存结果，不以算法新旧代替验证。",
+    "followUps": [
+      {
+        "question": "Cross-Encoder为什么不直接做全库检索？",
+        "answer": "查询与每个文档需联合编码，计算无法预先完成，大库成本太高；适合对少量候选重排。"
+      },
+      {
+        "question": "稀疏检索是否已经过时？",
+        "answer": "没有，编号、专有名词和精确短语上常优于稠密向量，混合检索通常更稳。"
+      }
+    ],
+    "pitfalls": [
+      "把所有神经网络表示都称为Embedding而不区分训练目标和检索方式。"
+    ],
+    "tags": [
+      "RAG",
+      "Embedding算法",
+      "混合检索"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按信息检索演进分类回答。"
+  },
+  {
+    "sourceId": "src-1181",
+    "shortAnswer": "向量数据库存储向量与元数据，并提供ANN索引、过滤、更新和分布式检索；选型应以数据与SLO压测。",
+    "fullAnswer": "对比时先明确向量数量、维度、更新率、过滤选择性、Top-k、召回目标、租户隔离和备份恢复。HNSW通常高召回低延迟但内存大，IVF/PQ可压缩并需训练与调参；还要看标量过滤是在ANN前后执行、分片再排序、删除一致性和混合检索。自建与托管在运维、合规和成本上不同。边界是向量库不替代原文真值与权限系统。失败处理包括超时降级到关键词、索引重建和快照恢复。评测同时测Recall@k、P95/P99、吞吐、成本和故障恢复时间。",
+    "followUps": [
+      {
+        "question": "只测延迟为什么不够？",
+        "answer": "ANN可通过降低搜索深度获得更快延迟却损失召回，必须在同一召回目标下比较。"
+      },
+      {
+        "question": "过滤条件对性能有何影响？",
+        "answer": "高选择性过滤若执行顺序不合理，会让ANN候选不足或扫描放大，需要用真实元数据分布测试。"
+      }
+    ],
+    "pitfalls": [
+      "用厂商默认参数跑小样本就决定生产选型。"
+    ],
+    "tags": [
+      "RAG",
+      "向量数据库",
+      "选型"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体产品能力和索引参数变化快，以当前版本实测。"
+  },
+  {
+    "sourceId": "src-1182",
+    "shortAnswer": "介绍所用向量库应给出规模、维度、索引、过滤、SLO和瓶颈证据，并说明调参与故障恢复，而非只报产品名。",
+    "fullAnswer": "示例回答框架：说明千万级向量、具体维度与更新频率，采用HNSW或IVF类索引，按租户分区并做元数据过滤；给出目标Recall@10、P99和QPS。瓶颈可能是内存膨胀、热点分片、过滤后候选不足、批量写入影响查询或网络扇出。通过量化、调整efSearch/nprobe、分片重平衡、冷热分层和批写限速优化。索引损坏或超时需关键词降级、快照恢复。能力边界是没有真实项目时必须明确是假设压测，不可编造数字。",
+    "followUps": [
+      {
+        "question": "如何证明优化没有牺牲相关性？",
+        "answer": "固定标注集，在优化前后同时比较召回、排序指标与延迟，并对失败查询做分桶分析。"
+      },
+      {
+        "question": "数据量上升十倍先做什么？",
+        "answer": "先用采样复制真实分布做容量模型，确认内存、分片和构建时间，再决定扩容或压缩。"
+      }
+    ],
+    "pitfalls": [
+      "伪造生产规模和指标，或只报平均延迟。"
+    ],
+    "tags": [
+      "RAG",
+      "向量数据库",
+      "性能"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "原题要求项目经历；无用户项目数据时提供诚实的回答框架。"
+  },
+  {
+    "sourceId": "src-1183",
+    "shortAnswer": "Function Calling是模型按工具Schema生成结构化调用意图，由宿主校验执行，再把结果返回模型继续推理。",
+    "fullAnswer": "应用把工具名、描述和参数Schema随请求提供，模型根据上下文输出工具调用而非直接执行；编排器验证JSON、类型、权限和业务约束，调用真实API，将受信任边界明确的结果作为工具消息反馈。模型可能选错、漏参或被提示注入，因此工具描述应最小化，危险操作需确认与幂等键，超时重试要有限。评测包括工具选择准确率、参数正确率、任务成功率、无调用率与越权调用率。不同模型API格式会变化。",
+    "followUps": [
+      {
+        "question": "Function Calling保证JSON永远合法吗？",
+        "answer": "不保证，结构化约束可提高成功率，但宿主仍必须解析校验并处理模型或版本差异。"
+      },
+      {
+        "question": "工具结果可以直接当系统指令吗？",
+        "answer": "不应。外部结果是不可信数据，要隔离其中的指令文本并限制模型下一步权限。"
+      }
+    ],
+    "pitfalls": [
+      "让模型直接执行高权限工具且没有服务端授权检查。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "Function Calling",
+      "安全"
+    ],
+    "difficulty": "中等",
+    "contextNote": "具体tool_calls字段与结构化输出能力以模型API版本为准。"
+  },
+  {
+    "sourceId": "src-1184",
+    "shortAnswer": "MCP是客户端与外部能力的标准连接协议，Skill是面向Agent的任务说明、流程和资源包；二者层次不同且可组合。",
+    "fullAnswer": "MCP定义客户端、Server之间如何发现并调用tools、读取resources或使用prompts，解决能力接入互操作；Skill通常描述某类任务应如何完成，包含步骤、约束、脚本或模板，解决行为复用与领域操作规范。一个Skill可指导Agent调用多个MCP Server，MCP本身不等于工作流。边界上，两者都不能替代服务端授权、沙箱和人工确认。失败时应区分技能步骤错误与协议连接错误。评测分别看任务成功率与协议兼容、调用正确率。",
+    "followUps": [
+      {
+        "question": "Skill里能直接包含工具实现吗？",
+        "answer": "可以附脚本或引用工具，但是否可执行取决于宿主；Skill的核心仍是可复用任务知识而非通用传输协议。"
+      },
+      {
+        "question": "MCP Server能强制Agent遵守Skill吗？",
+        "answer": "不能天然保证，Server只暴露能力与元数据；关键安全策略必须在服务端执行。"
+      }
+    ],
+    "pitfalls": [
+      "把MCP和Skill都当成提示词文件，忽略协议与执行边界。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "MCP",
+      "Agent Skills"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "Skill格式依Agent平台，MCP规范也会演进。"
+  },
+  {
+    "sourceId": "src-1185",
+    "shortAnswer": "Function Calling是单次模型到工具的调用接口，MCP标准化能力接入与发现，Skill封装完成任务的方法和约束。",
+    "fullAnswer": "Function Calling回答“模型如何表达要调用哪个函数及参数”；MCP回答“宿主如何以统一协议连接外部Server并列出工具、资源”；Skill回答“面对某类任务应遵循什么流程、使用哪些能力”。实际系统可由Skill指导规划，MCP提供工具目录，模型用Function Calling形成具体调用。三者都不授予权限，宿主必须校验参数、身份与副作用。失败分析按路由、协议、执行和流程分层，评测既看单步调用准确率，也看端到端任务完成与安全违规率。",
+    "followUps": [
+      {
+        "question": "不用MCP也能Function Calling吗？",
+        "answer": "能，应用可直接把本地函数Schema提供给模型；MCP的价值是标准化跨客户端接入。"
+      },
+      {
+        "question": "有MCP还需要Skill吗？",
+        "answer": "工具很多或任务流程复杂时仍需要，MCP告诉模型有什么，Skill帮助决定如何可靠完成任务。"
+      }
+    ],
+    "pitfalls": [
+      "三种概念混用，导致权限与错误责任无法定位。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "Function Calling",
+      "MCP"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体Skill产品定义可能不同，按通用Agent工程层次回答。"
+  },
+  {
+    "sourceId": "src-1186",
+    "shortAnswer": "A2A面向Agent之间的发现、委派和协作，MCP面向应用或Agent连接工具与上下文，两者解决不同连接关系。",
+    "fullAnswer": "A2A通常描述一个Agent如何公布能力、接收任务、交换进度与产物，并支持长任务和身份协作；MCP让Host通过Client连接Server，访问工具、资源和提示。一个编排Agent可用A2A委托专家Agent，专家再用MCP访问数据库。边界上，协议互通不代表互相信任，必须验证Agent身份、任务授权、数据最小披露和结果来源。失败要有任务状态、取消与幂等。评测看跨实现兼容、完成率、超时恢复和越权率。",
+    "followUps": [
+      {
+        "question": "何时直接调用工具而非委托Agent？",
+        "answer": "步骤明确、结果确定且无需独立推理时直接工具更简单；开放式子任务或跨域协作才考虑A2A。"
+      },
+      {
+        "question": "A2A结果如何信任？",
+        "answer": "校验来源身份、签名或通道，要求证据与结构化结果，并在关键动作前由本地策略复核。"
+      }
+    ],
+    "pitfalls": [
+      "把远端Agent视为本地函数，忽略其非确定性和权限边界。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "A2A",
+      "MCP"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "A2A和MCP规范版本可能快速演进，以当前官方规范为准。"
+  },
+  {
+    "sourceId": "src-1187",
+    "shortAnswer": "MCP常见传输包括本地标准输入输出，以及基于HTTP的流式通信；旧实现也可能使用SSE组合。",
+    "fullAnswer": "本地Server常由Host启动，以stdio交换JSON-RPC消息，进程边界清晰且无需开放端口；远程Server通常采用规范定义的HTTP流式传输，支持请求响应、通知和会话能力。具体从早期HTTP+SSE到后续Streamable HTTP的演进要按协议版本协商，不能假设客户端都兼容。连接失败需区分初始化、能力协商、断线和超时，远程传输必须TLS、认证与来源校验。评测涵盖版本互操作、重连、并发与消息大小限制。",
+    "followUps": [
+      {
+        "question": "stdio适合什么场景？",
+        "answer": "适合同机、由Host管理生命周期的工具，部署简单且攻击面较小，但不适合直接跨网络共享。"
+      },
+      {
+        "question": "SSE能双向发送吗？",
+        "answer": "SSE本身主要是服务器到客户端单向流，客户端到服务器通常另用HTTP请求；这也是传输设计需配套的原因。"
+      }
+    ],
+    "pitfalls": [
+      "将本地MCP Server绑定公网且无认证。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "MCP传输",
+      "通信协议"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "MCP传输规范有版本演进，需协商并参考当前规范。"
+  },
+  {
+    "sourceId": "src-1188",
+    "shortAnswer": "WebSocket提供持久全双工消息通道；SSE基于HTTP提供服务器到客户端单向事件流，自动重连更简单。",
+    "fullAnswer": "WebSocket握手后双方可随时发送文本或二进制帧，适合实时双向控制、语音信令和高频交互，但代理、心跳、背压与连接状态管理更复杂。SSE用text/event-stream持续下行，浏览器原生EventSource可重连并携带事件ID，客户端上行另走HTTP，适合LLM文本Token流。两者都需鉴权续期、连接数规划和断线恢复；SSE受浏览器连接与中间代理缓冲影响。评测看首Token、断线恢复率、连接资源和消息丢失重复。",
+    "followUps": [
+      {
+        "question": "LLM聊天一定要WebSocket吗？",
+        "answer": "不一定，普通请求加SSE下行已能覆盖文本流和取消接口；只有频繁双向事件才更需要WebSocket。"
+      },
+      {
+        "question": "断线重连如何避免重复内容？",
+        "answer": "给事件单调ID并保存已确认位置，服务端支持从游标续传，客户端按ID去重。"
+      }
+    ],
+    "pitfalls": [
+      "忽略反向代理超时和缓冲，测试环境流式正常而生产整段返回。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "WebSocket",
+      "SSE"
+    ],
+    "difficulty": "中等",
+    "contextNote": "浏览器与网关支持存在差异，需在实际链路测试。"
+  },
+  {
+    "sourceId": "src-1189",
+    "shortAnswer": "WebRTC面向低延迟实时音视频，具备媒体编解码、拥塞控制和点对点能力；WebSocket只是可靠双向数据通道。",
+    "fullAnswer": "AI语音对话中，WebRTC可用RTP/UDP类媒体传输降低头阻塞，内建抖动缓冲、带宽估计、回声与媒体协商，并可通过数据通道传事件；WebSocket基于TCP，部署简单，适合文本和控制，但丢包重传可能让实时音频延迟累积。WebRTC需要ICE、STUN/TURN和复杂信令，企业网络可能退化到中继。失败时要降级音频上传或WebSocket。评测端到端语音延迟、卡顿率、丢包恢复、TURN比例和成本。",
+    "followUps": [
+      {
+        "question": "WebRTC是否一定点对点？",
+        "answer": "不一定，实际常通过TURN中继或媒体服务器转发，尤其在复杂NAT、录制和多人场景。"
+      },
+      {
+        "question": "信令为什么还能用WebSocket？",
+        "answer": "WebRTC未规定信令协议，可用WebSocket或HTTP交换offer、answer和ICE候选。"
+      }
+    ],
+    "pitfalls": [
+      "只测局域网低延迟，不覆盖移动网络、NAT和TURN费用。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "WebRTC",
+      "实时语音"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "浏览器实现、编解码器与网络策略会影响结果。"
+  },
+  {
+    "sourceId": "src-1190",
+    "shortAnswer": "大模型网关统一处理多供应商路由、鉴权、配额、成本、缓存、观测、安全策略和降级。",
+    "fullAnswer": "网关把应用与模型API差异隔离，规范请求、流式响应和错误码，按模型能力、区域、价格或健康度路由；集中做租户密钥、速率限制、预算、敏感信息脱敏、提示注入过滤和审计。失败时可在满足语义与数据合规的前提下重试或切换模型，但要避免非幂等工具调用被重复。评测包括可用性、首Token/P99、路由质量、成本、降级成功率和安全误拦截。自研或框架API变化快，应描述实际版本。",
+    "followUps": [
+      {
+        "question": "网关缓存什么请求安全？",
+        "answer": "仅对可确定、无用户私密上下文且键包含模型版本与参数的请求；个性化对话默认不跨用户缓存。"
+      },
+      {
+        "question": "模型切换为何可能改变结果？",
+        "answer": "上下文窗口、工具格式、安全策略和推理能力不同，降级路由必须通过任务集验证而非只看HTTP成功。"
+      }
+    ],
+    "pitfalls": [
+      "网关记录完整提示和响应却没有脱敏、权限与保留期限。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "LLM网关",
+      "生产实践"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体网关产品与供应商API随版本变化，回答聚焦职责。"
+  },
+  {
+    "sourceId": "src-1191",
+    "shortAnswer": "工具多时可先按领域和权限筛候选，再用轻量检索或路由模型选择少量工具Schema交给主模型。",
+    "fullAnswer": "建立包含工具描述、输入输出、成本、风险和租户权限的目录；先用规则处理明确命令，再以关键词或Embedding召回候选，必要时用分类器重排，只把Top-k详细Schema放上下文。相近工具应合并或澄清，危险工具单独确认。路由失败可扩大候选、询问用户或无副作用回退，不能猜参数执行。评测用混淆工具集统计Top-k召回、选择准确率、Token节省、任务成功率和越权调用率。",
+    "followUps": [
+      {
+        "question": "工具描述怎么写更利于路由？",
+        "answer": "明确适用与不适用场景、关键实体、输入限制和结果语义，避免多个工具使用同样空泛描述。"
+      },
+      {
+        "question": "路由能完全交给向量相似度吗？",
+        "answer": "不能，权限、实时状态、参数可满足性和风险需规则或策略层校验，相似度只适合召回。"
+      }
+    ],
+    "pitfalls": [
+      "为节省Token隐藏关键限制，模型选对工具却错误使用。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "Tool Routing",
+      "评测"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "路由模型与工具Schema上限依所用模型版本。"
+  },
+  {
+    "sourceId": "src-1192",
+    "shortAnswer": "工具容错应分层处理格式、语义、权限、超时和业务失败，所有执行先校验、限次重试并保持幂等。",
+    "fullAnswer": "模型输出先做JSON解析和Schema校验，可把具体字段错误反馈模型有限次自修；语义校验检查资源存在、范围与权限，危险参数不得由模型绕过。调用设置连接与总超时，只对可重试错误采用指数退避和抖动；写操作使用幂等键并在状态未知时先查询，禁止盲重放。最终失败返回结构化错误，让Agent换工具、降级或向用户说明。评测覆盖畸形参数、429、5xx、断网、部分成功和重复调用，统计恢复率及副作用重复率。",
+    "followUps": [
+      {
+        "question": "工具超时后能否直接重试？",
+        "answer": "读操作通常可有限重试；写操作结果可能已生效，应凭幂等键或状态查询确认后再决定。"
+      },
+      {
+        "question": "错误信息要全部给模型吗？",
+        "answer": "提供可行动且脱敏的信息，内部堆栈、密钥和数据库结构不应暴露。"
+      }
+    ],
+    "pitfalls": [
+      "无限让模型自修参数，形成高成本循环或重复副作用。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "容错",
+      "幂等"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "按生产Agent工具执行器回答。"
+  },
+  {
+    "sourceId": "src-1193",
+    "shortAnswer": "模型通过训练数据中的工具调用轨迹和结构化监督，学习何时选择工具、生成参数并利用返回结果。",
+    "fullAnswer": "预训练让模型理解自然语言与代码，后续监督微调提供“用户请求—工具Schema—调用—结果—最终回答”样本，偏好优化或强化学习进一步奖励正确选择和任务完成。推理时宿主把可用工具描述加入上下文，模型输出特殊结构Token或JSON。真正执行由外部编排器完成。模型只学到概率策略，面对新工具依赖描述和上下文泛化，仍会幻选或错参；调用失败时应把结构化错误反馈给编排器并限制重试。评测应分工具选择、参数、结果利用和端到端成功率，并加入拒绝调用样本。",
+    "followUps": [
+      {
+        "question": "模型没见过某个具体工具还能调用吗？",
+        "answer": "若Schema和描述清晰，可迁移已学到的工具使用模式，但复杂语义仍需示例或更强路由。"
+      },
+      {
+        "question": "训练样本为何需要“不调用工具”？",
+        "answer": "否则模型会过度调用；负样本教它在知识回答、权限不足或参数缺失时停下。"
+      }
+    ],
+    "pitfalls": [
+      "认为模型内部真的连接了API，忽略宿主执行与安全校验。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "Function Calling",
+      "训练"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "不同模型的专用Token和训练配方通常不公开，回答基于通用机制。"
+  },
+  {
+    "sourceId": "src-1194",
+    "shortAnswer": "Function Call能力通常由结构化调用语料做监督微调，再以偏好或强化学习优化工具选择、参数和结果利用。",
+    "fullAnswer": "数据包含工具定义、用户意图、正确调用、工具返回及最终答案，也要加入不该调用、参数缺失、工具报错和提示注入等困难样本。模型可用专用控制Token区分调用与文本，通过约束解码提高Schema合法率。奖励不能只看JSON格式，还要看真实执行成功、最小调用次数和安全边界，否则会学会“格式正确但选错工具”。离线评测后还需沙箱在线回放。供应商具体训练细节不可见，应明确这是工程推断。",
+    "followUps": [
+      {
+        "question": "合成轨迹能否替代人工数据？",
+        "answer": "可扩大覆盖，但会继承生成模型错误；需执行校验、人工抽样和真实失败数据校准。"
+      },
+      {
+        "question": "如何训练多步工具调用？",
+        "answer": "提供含中间观察、状态变化和停止条件的轨迹，并对重复调用与越权施加惩罚。"
+      }
+    ],
+    "pitfalls": [
+      "只奖励最终答案，模型可能通过不安全或昂贵调用碰巧成功。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "Function Calling训练",
+      "评测"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体商业模型训练方案未公开，此答案为通用方法推断。"
+  },
+  {
+    "sourceId": "src-1195",
+    "shortAnswer": "MCP是让AI应用以统一方式连接外部工具、资源和提示的开放协议，核心包括能力协商、发现、调用与消息生命周期。",
+    "fullAnswer": "Host承载Agent体验，内部MCP Client与一个或多个Server建立会话；双方初始化并协商版本和能力。Server可暴露tools供调用、resources供读取、prompts供复用，客户端也可能提供采样等能力，具体以规范为准。消息通常基于JSON-RPC并运行在stdio或HTTP传输上。MCP解决互操作，不自动解决信任：Server输入输出都要校验，远程连接需认证授权，副作用工具需确认。评测兼容性、超时取消、权限越界和恶意内容注入。",
+    "followUps": [
+      {
+        "question": "MCP Server等于Agent吗？",
+        "answer": "不等于，它通常暴露确定性能力与上下文，不必自行规划；Agent可调用Server完成任务。"
+      },
+      {
+        "question": "Resource与Tool如何区分？",
+        "answer": "Resource偏可读取上下文，Tool执行带参数操作；是否有副作用仍由具体Server契约说明。"
+      }
+    ],
+    "pitfalls": [
+      "安装未知MCP Server后直接授予文件和凭据访问。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "MCP",
+      "协议"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "MCP能力和传输随规范版本演进，以当前官方规范为准。"
+  },
+  {
+    "sourceId": "src-1196",
+    "shortAnswer": "MCP架构主要由Host、Client和Server组成，并通过协议层与传输层交换tools、resources、prompts等能力。",
+    "fullAnswer": "Host负责用户界面、模型、权限和生命周期；每个Client通常维护到特定Server的连接，完成初始化、版本与能力协商；Server实现实际数据源或操作。协议用请求、响应和通知表达发现、读取、调用、进度与取消，传输可为stdio或HTTP流式方式。Server只是能力提供者，认证、用户同意和结果隔离常由Host与服务端共同承担。失败需能区分传输断开、协议错误与工具业务错误，并保留关联ID；评测应覆盖版本协商、取消、重连和权限隔离。",
+    "followUps": [
+      {
+        "question": "一个Client能连接多个Server吗？",
+        "answer": "概念上Host会管理多个Client连接，每个连接对应Server，具体实现可以封装为统一管理器。"
+      },
+      {
+        "question": "为什么需要能力协商？",
+        "answer": "客户端和服务端版本、可选功能不同，协商避免调用对方不支持的方法。"
+      }
+    ],
+    "pitfalls": [
+      "只画三组件图，不解释权限与错误由谁负责。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "MCP架构",
+      "Client Server"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "组件责任以当前MCP规范为准。"
+  },
+  {
+    "sourceId": "src-1197",
+    "shortAnswer": "Function Calling是模型输出工具调用意图的能力，MCP是工具与上下文接入协议；实际运行MCP仍可把工具Schema交给模型调用。",
+    "fullAnswer": "应用直连少量内部函数时，只需Function Calling和本地执行器；需要让多种客户端复用外部能力、动态发现工具和资源时，MCP减少定制适配。典型MCP实践是Host启动或连接Server，初始化后list tools，把选定Schema提供模型，再将call tool请求发给Server并回传结果。边界是协议成功不等于调用正确，仍需授权、参数校验和副作用确认。评测协议兼容与模型调用准确率两个层面。",
+    "followUps": [
+      {
+        "question": "跑通MCP最小闭环是什么？",
+        "answer": "完成初始化和能力协商，列出工具，调用一个无副作用工具，处理结果、错误与关闭，并记录协议版本。"
+      },
+      {
+        "question": "Function Calling能读取MCP Resource吗？",
+        "answer": "宿主可把资源读取封装成工具或直接管理资源上下文；两者如何桥接取决于Host设计。"
+      }
+    ],
+    "pitfalls": [
+      "把连通Server当作端到端成功，未测模型选错工具和权限。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "MCP",
+      "Function Calling"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "“实际跑过”应使用本人真实经验；此处给出可验证的最小实践框架。"
+  },
+  {
+    "sourceId": "src-1198",
+    "shortAnswer": "固定应用内少量函数优先Function Calling；需要跨应用复用、动态发现和标准化外部能力时采用MCP，并可组合两者。",
+    "fullAnswer": "Function Calling集成短、延迟低，应用直接控制Schema和执行器，适合稳定的内部工具；工具来自不同团队、需资源读取、版本协商或多客户端互操作时，MCP把接入边界标准化。MCP增加连接、协议、安全和运维成本，不值得为单个简单函数强行引入。无论选择哪种，模型调用只是建议，服务端必须鉴权、校验和记录副作用。失败处理需有超时、取消和降级，评测任务成功率、兼容性、延迟及越权率。",
+    "followUps": [
+      {
+        "question": "MCP是否替代Function Calling？",
+        "answer": "通常不替代，Host仍可能利用模型的Function Calling能力选择并调用MCP暴露的工具。"
+      },
+      {
+        "question": "何时从直连迁移MCP？",
+        "answer": "当适配器重复、能力需被多个Host复用或工具目录动态变化时，再以兼容测试逐步迁移。"
+      }
+    ],
+    "pitfalls": [
+      "为了追新协议增加复杂度，却没有复用或互操作需求。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "技术选型",
+      "MCP"
+    ],
+    "difficulty": "中等",
+    "contextNote": "按工程规模与互操作需求选型。"
+  },
+  {
+    "sourceId": "src-1199",
+    "shortAnswer": "推理模型不支持MCP通常不是推理本身冲突，而是其API或宿主缺少工具调用、结构化输出和多轮工具消息适配。",
+    "fullAnswer": "MCP连接由Host完成，模型并不直接“运行协议”。若某推理模型只返回长文本、API不接受工具Schema、不能输出稳定调用结构，或服务商限制中间观察与继续生成，Host就难把MCP工具可靠接入。还可能是产品尚未完成兼容，而非模型理论能力不足。可用外部路由模型选择工具，再把结果交给推理模型，但会增加延迟和错误边界。评测结构合法率、工具选择和多步完成率，不能仅凭是否出现JSON判断支持。",
+    "followUps": [
+      {
+        "question": "能否用提示词让不支持工具API的模型输出JSON？",
+        "answer": "可以尝试文本约定，但可靠性、停止控制和安全性较弱，仍需解析修复，不能等同原生支持。"
+      },
+      {
+        "question": "MCP兼容应由谁实现？",
+        "answer": "主要由Host和模型API适配层实现；模型需提供足够稳定的结构化决策与多轮能力。"
+      }
+    ],
+    "pitfalls": [
+      "把“模型不支持MCP”误解为MCP代码必须运行在模型内部。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "推理模型",
+      "MCP兼容"
+    ],
+    "difficulty": "进阶",
+    "contextNote": "具体模型能力与API限制变化快，需以当前版本实测。"
+  },
+  {
+    "sourceId": "src-1200",
+    "shortAnswer": "Skill是可复用的任务能力包，向Agent提供何时使用、执行步骤、约束、脚本和模板，使复杂工作更稳定。",
+    "fullAnswer": "Skill不只是长提示词：它可按需加载说明和资源，把领域流程、检查清单、工具选择与验收标准封装起来，减少每次重新规划。边界是Skill本身不应自动获得更高权限，所有工具仍受宿主授权；内容也可能过时或含恶意指令，因此需来源审查、版本化和最小权限。失败时记录卡在哪一步并允许回滚或人工接管。评测用代表任务比较启用前后的成功率、步骤遗漏、成本和安全违规。",
+    "followUps": [
+      {
+        "question": "Skill与普通Prompt区别是什么？",
+        "answer": "普通Prompt多为单次上下文；Skill面向重复任务，包含触发条件、流程、资源与可验证输出，通常可版本管理。"
+      },
+      {
+        "question": "Skill如何避免过时？",
+        "answer": "标注适用工具和版本，建立测试用例与维护人，依赖变更后重新验证并支持回滚。"
+      }
+    ],
+    "pitfalls": [
+      "把Skill当可信代码自动执行，未审查其脚本和权限需求。"
+    ],
+    "tags": [
+      "LLM工具调用",
+      "Agent Skills",
+      "能力复用"
+    ],
+    "difficulty": "中等",
+    "contextNote": "Skill定义随Agent平台不同，此处按通用可复用任务包理解。"
+  }
+]

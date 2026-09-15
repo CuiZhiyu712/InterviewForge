@@ -1,0 +1,10 @@
+{
+  "name": "interview-forge-local-library",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "import": "node --disable-warning=ExperimentalWarning server/importer.mjs",
+    "start": "node --disable-warning=ExperimentalWarning server/server.mjs",
+    "test": "node --disable-warning=ExperimentalWarning tests/test-importer.mjs && node --disable-warning=ExperimentalWarning tests/test-server.mjs && node tests/test-pages.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs"
+  }
+}

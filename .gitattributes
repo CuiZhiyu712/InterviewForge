@@ -1,0 +1,4 @@
+dist/library/** text eol=lf
+dist/library/data/** -diff
+local-library/** text eol=lf
+local-library/data/*.sqlite binary

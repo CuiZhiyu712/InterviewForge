@@ -9,8 +9,14 @@ const libraryRoot = resolve(root, "local-library");
 const publicDir = resolve(libraryRoot, "public");
 const databasePath = resolve(libraryRoot, "data", "open-source.sqlite");
 const serverPath = resolve(libraryRoot, "server", "server.mjs");
-const staticFetchPath = resolve(root, "scripts", "static-fetch.js");
 const outputDir = resolve(root, "dist", "library");
+
+// Hand-written browser assets, copied verbatim next to the generated snapshot.
+const assets = [
+  ["scripts/static-fetch.js", "js/static-fetch.js"],
+  ["scripts/reading-controls.js", "js/reading-controls.js"],
+  ["scripts/reading.css", "css/reading.css"],
+];
 
 const tables = ["repositories", "documents", "questions"];
 // Served verbatim from the local server so the snapshot cannot drift from its SQL.
@@ -18,9 +24,15 @@ const aggregateRoutes = { stats: "/api/stats", modules: "/api/modules", sources:
 const heroOriginal = "八个开源仓库的本地聚合版本，所有内容从 SQLite 分页读取，不上传、不部署、不参与公开版构建。";
 const heroPublic = "八个开源仓库的公开聚合镜像，内容来自数据库快照，筛选与分页全部在你的浏览器里完成。";
 const staticFetchTag = '<script type="module" src="js/static-fetch.js"></script>';
+const readingTags = '<link rel="stylesheet" href="css/reading.css"><script type="module" src="js/reading-controls.js"></script>';
+// Only the pages that render Markdown bodies get a reading-size control.
+const readingPages = new Set(["learn.html", "practice.html"]);
 
 if (!existsSync(publicDir) || !existsSync(databasePath) || !existsSync(serverPath)) {
   throw new Error(`missing local-library sources under ${libraryRoot}; this build only runs on a machine that has the imported database`);
+}
+for (const [source] of assets) {
+  if (!existsSync(resolve(root, source))) throw new Error(`missing build asset: ${source}`);
 }
 
 const readTable = (database, table) => {
@@ -77,9 +89,10 @@ const copyDirectory = async (sourceDir, targetDir) => {
 const rewritePage = (html, name) => {
   const rewritten = html.replaceAll('href="/"', 'href="index.html"');
   if (rewritten.includes('href="/"')) throw new Error(`${name}: root-absolute links survive the rewrite`);
-  if (!html.includes("</head>")) throw new Error(`${name}: no </head> to inject the snapshot loader into`);
-  const withLoader = rewritten.replace("</head>", `${staticFetchTag}</head>`);
+  if (!rewritten.includes("</head>")) throw new Error(`${name}: no </head> to inject the snapshot loader into`);
+  const withLoader = rewritten.replace("</head>", `${staticFetchTag}${readingPages.has(name) ? readingTags : ""}</head>`);
   if (!withLoader.includes(staticFetchTag)) throw new Error(`${name}: snapshot loader was not injected`);
+  if (readingPages.has(name) && !withLoader.includes("js/reading-controls.js")) throw new Error(`${name}: reading control was not injected`);
   return name === "index.html" ? withLoader.replace(heroOriginal, heroPublic) : withLoader;
 };
 
@@ -103,7 +116,7 @@ for (const [name, value] of Object.entries(aggregates)) {
   await writeSnapshot(name, Array.isArray(value) ? serializeRows(value) : `${JSON.stringify(value)}\n`);
 }
 
-await copyFile(staticFetchPath, join(outputDir, "js", "static-fetch.js"));
+for (const [source, target] of assets) await copyFile(resolve(root, source), join(outputDir, target));
 
 const summary = snapshots.map(({ table, columns, rows }) => `${table}=${rows.length}(${columns.length} columns)`).join(" ");
 console.log(`built dist/library with ${pages.length} pages, ${summary}, ${Object.keys(aggregates).length} aggregate routes, ${(bytes / 1048576).toFixed(1)} MB of snapshot data`);

@@ -7,12 +7,25 @@ const hasAnswer = (answer) => answer.replace(/^ +| +$/g, "").length > 0;
 const byName = (left, right) => (left.name < right.name ? -1 : left.name > right.name ? 1 : 0);
 
 const pages = ["index.html", "learn.html", "practice.html", "sources.html"];
+const readingPages = ["learn.html", "practice.html"];
 const loaderTag = "js/static-fetch.js";
 for (const name of pages) {
   const html = await readFile(new URL(name, outputDir), "utf8");
   const moduleScripts = [...html.matchAll(/<script type="module" src="([^"]+)"><\/script>/g)].map((match) => match[1]);
   assert.equal(moduleScripts[0], loaderTag, `${name} must boot the snapshot loader before the page script`);
   assert.doesNotMatch(html, /href="\/"/, `${name} must not link to the site root`);
+  const wantsReadingControl = readingPages.includes(name);
+  assert.equal(html.includes("js/reading-controls.js"), wantsReadingControl, `${name} reading control`);
+  assert.equal(html.includes("css/reading.css"), wantsReadingControl, `${name} reading stylesheet`);
+  if (wantsReadingControl) {
+    assert.ok(html.indexOf("css/reading.css") > html.indexOf("css/app.css"), `${name} reading styles must load after app.css`);
+  }
+  const referenced = [...html.matchAll(/(?:src|href)="((?!https?:|index\.html|learn\.html|practice\.html|sources\.html)[^"]+)"/g)]
+    .map((match) => match[1]);
+  for (const asset of referenced) {
+    const response = await readFile(new URL(asset, outputDir)).catch(() => null);
+    assert.ok(response, `${name} references a missing asset: ${asset}`);
+  }
 }
 
 const [repositories, documents, questions, stats, modules, sources] = await Promise.all(

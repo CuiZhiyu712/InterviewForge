@@ -17,5 +17,7 @@ assert.ok(
 );
 assert.ok(scripts[1].includes("confirm('确定清空全部学习状态吗？')"), "reset confirmation missing");
 assert.ok(scripts[1].includes("['vague','unknown'].includes"), "weak-question filtering missing");
+assert.ok(scripts[1].includes("function studyP0"), "P0 quick-study behavior missing");
+assert.ok(scripts[1].includes("matchMedia('(max-width: 900px)')"), "mobile filter initialization missing");
 
 console.log("browser behavior script checks ok");

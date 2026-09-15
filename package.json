@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "db:create": "node scripts/create-database.mjs",
-    "answers:import": "node --disable-warning=ExperimentalWarning scripts/import-answer-batches.mjs",
+    "answers:import": "node --disable-warning=ExperimentalWarning scripts/import-answer-batches.mjs --database data/interview_bank.sqlite --batches data/answer-batches",
     "sources": "node scripts/merge-sources.mjs",
-    "build": "node scripts/build.mjs",
-    "test": "node tests/test-source-index.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs && node --disable-warning=ExperimentalWarning tests/test-answer-validation.mjs && node --disable-warning=ExperimentalWarning tests/test-resume-priority.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
+    "priority:map": "node --disable-warning=ExperimentalWarning scripts/map-resume-priority.mjs",
+    "quality": "node --disable-warning=ExperimentalWarning scripts/quality-report.mjs",
+    "build": "node --disable-warning=ExperimentalWarning scripts/build.mjs",
+    "test": "node tests/test-source-index.mjs && node --disable-warning=ExperimentalWarning tests/test-database.mjs && node --disable-warning=ExperimentalWarning tests/test-answer-validation.mjs && node --disable-warning=ExperimentalWarning tests/test-resume-priority.mjs && node --disable-warning=ExperimentalWarning tests/test-full-coverage.mjs && node --disable-warning=ExperimentalWarning tests/test-quality-report.mjs && node tests/test-questions.mjs && node tests/test-build.mjs && node tests/browser-check.mjs"
   }
 }

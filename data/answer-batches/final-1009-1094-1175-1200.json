@@ -747,7 +747,7 @@
       "框架原理"
     ],
     "difficulty": "中等",
-    "contextNote": "原题是汇总型标题，按“如何系统讲解Spring核心面试知识”转换。"
+    "contextNote": "概览/索引项：来源标题是知识汇总或索引页，不是一道具有单一答案的面试问题；本记录按知识纲要保留。"
   },
   {
     "sourceId": "src-1039",
@@ -1876,12 +1876,12 @@
   },
   {
     "sourceId": "src-1084",
-    "shortAnswer": "在Boot中先配置DataSource和事务管理器，再在配置类启用事务能力，并在可代理方法上使用@Transactional。",
+    "shortAnswer": "Spring Boot 单数据源场景通常自动配置 DataSource、事务管理器和事务基础设施，业务只需在经过代理的服务方法上使用 @Transactional。",
     "fullAnswer": "单数据源Boot通常自动创建PlatformTransactionManager并启用相关基础设施，业务在public服务方法标注@Transactional即可；纯Spring配置可显式@EnableTransactionManagement。要确认数据库引擎支持事务、方法经过容器代理、异常规则匹配，并为多数据源指定正确管理器。事务不跨线程自动传播，远程调用也不属于本地事务。测试不能只看异常，应验证数据库最终状态。",
     "followUps": [
       {
         "question": "Boot项目必须手写@EnableTransactionManagement吗？",
-        "answer": "很多自动配置场景不需要显式写，但添加可表达意图；是否自动启用应以版本和上下文为准。"
+        "answer": "典型 Spring Boot 自动配置场景不需要显式添加；只有纯 Spring、定制基础设施或自动配置条件不满足时才按实际配置补充。"
       },
       {
         "question": "事务注解放Controller合适吗？",

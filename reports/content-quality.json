@@ -1,0 +1,407 @@
+{
+  "generatedAt": "2026-09-15T04:56:35.761Z",
+  "totals": {
+    "questions": 1200,
+    "answers": 1200,
+    "missingAnswers": 0,
+    "exactDuplicateAnswers": 0,
+    "followUps": 2400,
+    "tags": 2876,
+    "resumeFocus": 75
+  },
+  "modules": [
+    {
+      "module": "Java基础",
+      "questions": 237,
+      "averageAnswerLength": 205.5,
+      "minimumAnswerLength": 111,
+      "basic": 86,
+      "intermediate": 114,
+      "advanced": 37,
+      "contextNotes": 75,
+      "resumeFocus": 2
+    },
+    {
+      "module": "企业面经",
+      "questions": 210,
+      "averageAnswerLength": 162.7,
+      "minimumAnswerLength": 118,
+      "basic": 75,
+      "intermediate": 104,
+      "advanced": 31,
+      "contextNotes": 74,
+      "resumeFocus": 0
+    },
+    {
+      "module": "MySQL",
+      "questions": 114,
+      "averageAnswerLength": 170.9,
+      "minimumAnswerLength": 127,
+      "basic": 18,
+      "intermediate": 49,
+      "advanced": 47,
+      "contextNotes": 85,
+      "resumeFocus": 11
+    },
+    {
+      "module": "操作系统",
+      "questions": 76,
+      "averageAnswerLength": 196.8,
+      "minimumAnswerLength": 162,
+      "basic": 21,
+      "intermediate": 43,
+      "advanced": 12,
+      "contextNotes": 14,
+      "resumeFocus": 0
+    },
+    {
+      "module": "Java并发",
+      "questions": 66,
+      "averageAnswerLength": 230.8,
+      "minimumAnswerLength": 122,
+      "basic": 15,
+      "intermediate": 34,
+      "advanced": 17,
+      "contextNotes": 6,
+      "resumeFocus": 7
+    },
+    {
+      "module": "Spring",
+      "questions": 65,
+      "averageAnswerLength": 213.1,
+      "minimumAnswerLength": 139,
+      "basic": 23,
+      "intermediate": 26,
+      "advanced": 16,
+      "contextNotes": 65,
+      "resumeFocus": 3
+    },
+    {
+      "module": "网络",
+      "questions": 59,
+      "averageAnswerLength": 182.6,
+      "minimumAnswerLength": 154,
+      "basic": 18,
+      "intermediate": 19,
+      "advanced": 22,
+      "contextNotes": 5,
+      "resumeFocus": 0
+    },
+    {
+      "module": "Redis",
+      "questions": 51,
+      "averageAnswerLength": 185.7,
+      "minimumAnswerLength": 148,
+      "basic": 8,
+      "intermediate": 22,
+      "advanced": 21,
+      "contextNotes": 23,
+      "resumeFocus": 5
+    },
+    {
+      "module": "Java集合",
+      "questions": 49,
+      "averageAnswerLength": 176.2,
+      "minimumAnswerLength": 116,
+      "basic": 27,
+      "intermediate": 18,
+      "advanced": 4,
+      "contextNotes": 10,
+      "resumeFocus": 0
+    },
+    {
+      "module": "JVM",
+      "questions": 46,
+      "averageAnswerLength": 192.8,
+      "minimumAnswerLength": 167,
+      "basic": 12,
+      "intermediate": 26,
+      "advanced": 8,
+      "contextNotes": 1,
+      "resumeFocus": 0
+    },
+    {
+      "module": "数据结构",
+      "questions": 46,
+      "averageAnswerLength": 162.3,
+      "minimumAnswerLength": 135,
+      "basic": 20,
+      "intermediate": 25,
+      "advanced": 1,
+      "contextNotes": 2,
+      "resumeFocus": 0
+    },
+    {
+      "module": "消息队列",
+      "questions": 40,
+      "averageAnswerLength": 166.6,
+      "minimumAnswerLength": 144,
+      "basic": 8,
+      "intermediate": 22,
+      "advanced": 10,
+      "contextNotes": 1,
+      "resumeFocus": 4
+    },
+    {
+      "module": "Agent",
+      "questions": 30,
+      "averageAnswerLength": 140.1,
+      "minimumAnswerLength": 126,
+      "basic": 4,
+      "intermediate": 13,
+      "advanced": 13,
+      "contextNotes": 6,
+      "resumeFocus": 10
+    },
+    {
+      "module": "分布式系统",
+      "questions": 25,
+      "averageAnswerLength": 195.3,
+      "minimumAnswerLength": 144,
+      "basic": 4,
+      "intermediate": 9,
+      "advanced": 12,
+      "contextNotes": 3,
+      "resumeFocus": 0
+    },
+    {
+      "module": "LLM工程",
+      "questions": 23,
+      "averageAnswerLength": 141.5,
+      "minimumAnswerLength": 129,
+      "basic": 5,
+      "intermediate": 8,
+      "advanced": 10,
+      "contextNotes": 5,
+      "resumeFocus": 4
+    },
+    {
+      "module": "RAG",
+      "questions": 23,
+      "averageAnswerLength": 159,
+      "minimumAnswerLength": 121,
+      "basic": 3,
+      "intermediate": 7,
+      "advanced": 13,
+      "contextNotes": 11,
+      "resumeFocus": 16
+    },
+    {
+      "module": "LLM工具调用",
+      "questions": 18,
+      "averageAnswerLength": 201.5,
+      "minimumAnswerLength": 174,
+      "basic": 0,
+      "intermediate": 4,
+      "advanced": 14,
+      "contextNotes": 18,
+      "resumeFocus": 12
+    },
+    {
+      "module": "LangChain/LangGraph/LlamaIndex",
+      "questions": 12,
+      "averageAnswerLength": 173.7,
+      "minimumAnswerLength": 131,
+      "basic": 1,
+      "intermediate": 6,
+      "advanced": 5,
+      "contextNotes": 12,
+      "resumeFocus": 0
+    },
+    {
+      "module": "算法",
+      "questions": 3,
+      "averageAnswerLength": 150.7,
+      "minimumAnswerLength": 147,
+      "basic": 2,
+      "intermediate": 1,
+      "advanced": 0,
+      "contextNotes": 1,
+      "resumeFocus": 0
+    },
+    {
+      "module": "数据库",
+      "questions": 2,
+      "averageAnswerLength": 180.5,
+      "minimumAnswerLength": 180,
+      "basic": 1,
+      "intermediate": 1,
+      "advanced": 0,
+      "contextNotes": 0,
+      "resumeFocus": 0
+    },
+    {
+      "module": "系统设计",
+      "questions": 2,
+      "averageAnswerLength": 155,
+      "minimumAnswerLength": 153,
+      "basic": 1,
+      "intermediate": 0,
+      "advanced": 1,
+      "contextNotes": 1,
+      "resumeFocus": 1
+    },
+    {
+      "module": "Docker",
+      "questions": 1,
+      "averageAnswerLength": 262,
+      "minimumAnswerLength": 262,
+      "basic": 1,
+      "intermediate": 0,
+      "advanced": 0,
+      "contextNotes": 1,
+      "resumeFocus": 0
+    },
+    {
+      "module": "Git",
+      "questions": 1,
+      "averageAnswerLength": 255,
+      "minimumAnswerLength": 255,
+      "basic": 1,
+      "intermediate": 0,
+      "advanced": 0,
+      "contextNotes": 1,
+      "resumeFocus": 0
+    },
+    {
+      "module": "Linux",
+      "questions": 1,
+      "averageAnswerLength": 216,
+      "minimumAnswerLength": 216,
+      "basic": 1,
+      "intermediate": 0,
+      "advanced": 0,
+      "contextNotes": 1,
+      "resumeFocus": 0
+    }
+  ],
+  "priority": [
+    {
+      "priority": "P0",
+      "count": 35
+    },
+    {
+      "priority": "P1",
+      "count": 37
+    },
+    {
+      "priority": "P2",
+      "count": 3
+    },
+    {
+      "priority": "非重点",
+      "count": 1125
+    }
+  ],
+  "reviewStatus": [
+    {
+      "status": "passed",
+      "count": 72
+    },
+    {
+      "status": "pending",
+      "count": 1200
+    }
+  ],
+  "auditThresholds": {
+    "shortAnswerMinimum": 15,
+    "fullAnswerMinimum": 120,
+    "nearDuplicateSimilarity": 0.88,
+    "templateSentenceMinimumUses": 5
+  },
+  "placeholderCandidates": [
+    {
+      "sourceId": "src-0284",
+      "question": "2. 进程和线程的区别？",
+      "shortLength": 27,
+      "fullLength": 118
+    },
+    {
+      "sourceId": "src-0738",
+      "question": "继承和多态有什么区别？",
+      "shortLength": 47,
+      "fullLength": 111
+    },
+    {
+      "sourceId": "src-0788",
+      "question": "了解的哈希冲突解决方法有哪些？",
+      "shortLength": 41,
+      "fullLength": 116
+    }
+  ],
+  "nearDuplicateCandidates": [
+    {
+      "left": "src-0833",
+      "right": "src-0855",
+      "similarity": 0.957
+    },
+    {
+      "left": "src-0855",
+      "right": "src-0863",
+      "similarity": 0.951
+    },
+    {
+      "left": "src-0126",
+      "right": "src-0189",
+      "similarity": 0.925
+    },
+    {
+      "left": "src-0964",
+      "right": "src-0968",
+      "similarity": 0.915
+    },
+    {
+      "left": "src-0138",
+      "right": "src-0198",
+      "similarity": 0.912
+    },
+    {
+      "left": "src-0833",
+      "right": "src-0863",
+      "similarity": 0.911
+    },
+    {
+      "left": "src-0137",
+      "right": "src-0162",
+      "similarity": 0.91
+    },
+    {
+      "left": "src-0966",
+      "right": "src-0967",
+      "similarity": 0.895
+    },
+    {
+      "left": "src-0845",
+      "right": "src-0856",
+      "similarity": 0.89
+    },
+    {
+      "left": "src-1005",
+      "right": "src-1006",
+      "similarity": 0.888
+    },
+    {
+      "left": "src-0955",
+      "right": "src-0965",
+      "similarity": 0.881
+    },
+    {
+      "left": "src-0955",
+      "right": "src-0971",
+      "similarity": 0.881
+    }
+  ],
+  "templateCandidates": [
+    {
+      "sentence": "Stream 提供消息 ID、消费组和确认",
+      "count": 5,
+      "sourceIds": [
+        "src-0111",
+        "src-0129",
+        "src-0190",
+        "src-1005",
+        "src-1006"
+      ]
+    }
+  ]
+}
